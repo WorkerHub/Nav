@@ -16,12 +16,23 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { GripVertical, Trash2 } from "lucide-react";
+import { GripVertical, Pencil, Trash2 } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 
 /**
  * 可拖拽排序列表（dnd-kit 原生 sortable）。
  * 每行自带拖拽把手 + 「上移 / 下移」按钮（WCAG 2.2 单指/键盘替代，MASTER.md §6）。
+ * 行内容只做展示，编辑 / 删除走行尾图标按钮（避免「点行即编辑」的误触）。
  */
 export interface SortableEntry {
   id: string;
@@ -73,16 +84,12 @@ function SortableRow({
         <GripVertical className="size-4" aria-hidden="true" />
       </button>
 
-      <button
-        type="button"
-        onClick={onEdit}
-        className="flex min-w-0 flex-1 items-center gap-2 text-left"
-      >
+      <div className="flex min-w-0 flex-1 items-center gap-2">
         <span className="truncate font-medium">{entry.label}</span>
         {entry.meta}
-      </button>
+      </div>
 
-      <div className="flex items-center gap-1">
+      <div className="flex shrink-0 items-center gap-1">
         <Button
           variant="ghost"
           size="icon"
@@ -103,6 +110,17 @@ function SortableRow({
         >
           ↓
         </Button>
+        {onEdit && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-8"
+            aria-label={`编辑 ${entry.label}`}
+            onClick={onEdit}
+          >
+            <Pencil className="size-4" aria-hidden="true" />
+          </Button>
+        )}
         {onRemove && (
           <Button
             variant="ghost"
@@ -124,12 +142,21 @@ export function SortableList({
   onReorder,
   onEdit,
   onRemove,
+  confirmRemove = false,
+  removeDescription = "删除后无法恢复，请确认。",
 }: {
   entries: SortableEntry[];
   onReorder: (ids: string[]) => void;
   onEdit?: (id: string) => void;
   onRemove?: (id: string) => void;
+  /** 删除前弹 AlertDialog 二次确认（破坏性删除，如分类会连带删掉其链接） */
+  confirmRemove?: boolean;
+  /** 二次确认弹窗的补充说明 */
+  removeDescription?: string;
 }) {
+  const [confirmTarget, setConfirmTarget] =
+    React.useState<SortableEntry | null>(null);
+  const [confirmOpen, setConfirmOpen] = React.useState(false);
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(KeyboardSensor, {
@@ -153,6 +180,15 @@ export function SortableList({
     onReorder(arrayMove(ids, index, next));
   };
 
+  const requestRemove = (entry: SortableEntry) => {
+    if (confirmRemove) {
+      setConfirmTarget(entry);
+      setConfirmOpen(true);
+      return;
+    }
+    onRemove?.(entry.id);
+  };
+
   return (
     <DndContext
       sensors={sensors}
@@ -169,11 +205,37 @@ export function SortableList({
               canMoveUp={index > 0}
               canMoveDown={index < entries.length - 1}
               onEdit={onEdit ? () => onEdit(entry.id) : undefined}
-              onRemove={onRemove ? () => onRemove(entry.id) : undefined}
+              onRemove={onRemove ? () => requestRemove(entry) : undefined}
             />
           ))}
         </div>
       </SortableContext>
+
+      {confirmRemove && (
+        <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                删除「{confirmTarget?.label}」？
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                {removeDescription}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>取消</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-destructive/10 text-destructive hover:bg-destructive/20"
+                onClick={() => {
+                  if (confirmTarget) onRemove?.(confirmTarget.id);
+                }}
+              >
+                删除
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
     </DndContext>
   );
 }
