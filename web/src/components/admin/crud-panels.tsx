@@ -81,8 +81,23 @@ export function CategoryPanel({
   };
 
   const save = async () => {
+    const nextName = name.trim();
+    if (!nextName) {
+      toast.error("分类名称不能为空");
+      return;
+    }
+    // 同名分类前端拦一道（后端无唯一约束）：trim + 不区分大小写，编辑时排除自身
+    const duplicated = categories.some(
+      (c) =>
+        c.id !== editing?.id &&
+        c.name.trim().toLowerCase() === nextName.toLowerCase(),
+    );
+    if (duplicated) {
+      toast.error(`分类「${nextName}」已存在，请换一个名称`);
+      return;
+    }
     const previousIcon = editing?.icon ?? null;
-    const payload = { name, icon: icon || null, visibility };
+    const payload = { name: nextName, icon: icon || null, visibility };
     if (editing) {
       await adminUpdateCategory(editing.id, payload);
       toast.success("分类已更新");
@@ -134,6 +149,8 @@ export function CategoryPanel({
         onReorder={reorder}
         onEdit={openEdit}
         onRemove={remove}
+        confirmRemove
+        removeDescription="删除分类后无法恢复，该分类下的链接也会一并删除。"
       />
 
       <Dialog
@@ -181,6 +198,9 @@ export function CategoryPanel({
   );
 }
 
+/** 「所有」筛选项的哨兵值：Radix Select 不允许 SelectItem 用空串（空串代表未选） */
+const ALL_CATEGORIES = "__all__";
+
 /** 链接 CRUD + 分类内排序（后台 links 为扁平列表，按 categoryId 过滤） */
 export function LinkPanel({
   categories,
@@ -191,11 +211,12 @@ export function LinkPanel({
   links: AdminLink[];
   onChanged: () => void;
 }) {
-  const [categoryId, setCategoryId] = React.useState(categories[0]?.id ?? "");
-  const category = categories.find((c) => c.id === categoryId) ?? categories[0];
-  const categoryLinks = links
-    .filter((l) => l.categoryId === category?.id)
-    .sort((a, b) => a.sortOrder - b.sortOrder);
+  const [categoryId, setCategoryId] = React.useState<string>(ALL_CATEGORIES);
+  const category = categories.find((c) => c.id === categoryId);
+  // 「所有」：不过滤分类，直接按全局 sortOrder 展示全部链接
+  const categoryLinks = (
+    category ? links.filter((l) => l.categoryId === category.id) : [...links]
+  ).sort((a, b) => a.sortOrder - b.sortOrder);
   const [editingId, setEditingId] = React.useState<string | null>(null);
   const [creating, setCreating] = React.useState(false);
   const [form, setForm] = React.useState({
@@ -208,6 +229,10 @@ export function LinkPanel({
   const draft = useAssetDraftCleanup();
 
   const openCreate = () => {
+    if (!category) {
+      toast.error("请先选择一个分类");
+      return;
+    }
     setForm({
       title: "",
       url: "",
@@ -240,7 +265,6 @@ export function LinkPanel({
   };
 
   const save = async () => {
-    if (!category) return;
     const previousIcon = links.find((l) => l.id === editingId)?.iconUrl ?? null;
     const payload = {
       title: form.title,
@@ -253,6 +277,7 @@ export function LinkPanel({
       await adminUpdateLink(editingId, payload);
       toast.success("链接已更新");
     } else {
+      if (!category) return;
       await adminCreateLink({ ...payload, categoryId: category.id });
       toast.success("链接已创建");
     }
@@ -292,11 +317,15 @@ export function LinkPanel({
       <div className="flex items-center justify-between gap-2">
         <h2 className="font-heading text-lg font-semibold">链接</h2>
         <div className="flex items-center gap-2">
-          <Select value={categoryId} onValueChange={setCategoryId}>
+          <Select
+            value={category ? categoryId : ALL_CATEGORIES}
+            onValueChange={setCategoryId}
+          >
             <SelectTrigger className="w-40" aria-label="选择分类">
               <SelectValue placeholder="选择分类" />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value={ALL_CATEGORIES}>所有</SelectItem>
               {categories.map((c) => (
                 <SelectItem key={c.id} value={c.id}>
                   {c.name}
@@ -304,13 +333,11 @@ export function LinkPanel({
               ))}
             </SelectContent>
           </Select>
-          <Button onClick={openCreate} disabled={!category}>
-            新建链接
-          </Button>
+          <Button onClick={openCreate}>新建链接</Button>
         </div>
       </div>
 
-      {category ? (
+      {categories.length > 0 ? (
         <SortableList
           entries={categoryLinks.map((l) => ({
             id: l.id,
@@ -334,6 +361,8 @@ export function LinkPanel({
           onReorder={reorder}
           onEdit={openEdit}
           onRemove={remove}
+          confirmRemove
+          removeDescription="删除链接后无法恢复，请确认。"
         />
       ) : (
         <p className="text-sm text-muted-foreground">

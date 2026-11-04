@@ -159,6 +159,8 @@ export function SearchEnginePanel({
         onReorder={reorder}
         onEdit={openEdit}
         onRemove={remove}
+        confirmRemove
+        removeDescription="删除后无法恢复，请确认。"
       />
 
       {!engines.some((e) => e.isDefault) && engines.length > 0 && (
