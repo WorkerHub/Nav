@@ -80,7 +80,7 @@ export function readVisitorTheme(): ThemeMode | null {
 /** 「跟随系统 → 浅色 → 深色 → 跟随系统」 */
 export function nextThemeMode(mode: ThemeMode): ThemeMode {
   const index = THEME_CYCLE.indexOf(mode);
-  return THEME_CYCLE[(index + 1) % THEME_CYCLE.length] ?? "system";
+  return THEME_CYCLE[(index + 1) % THEME_CYCLE.length];
 }
 
 interface VisitorThemeState {

@@ -1,6 +1,8 @@
-import { act, render, screen } from "@testing-library/react";
+import * as React from "react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { PublicPage } from "@/components/public-page";
 import { ThemeProvider } from "@/components/theme-provider";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { useNavStore } from "@/lib/nav-store";
@@ -52,7 +54,11 @@ function seedNoSite() {
   });
 }
 
-/** 写 localStorage 并同步 store，模拟「刷新后从本机偏好恢复」 */
+/**
+ * 写 localStorage 并同步 store，给「已有偏好」的用例摆初始状态。
+ * 注意它直接驱动 store：生产上的冷启动恢复路径（模块初始化时读取）由文件末尾
+ * 「刷新后从 localStorage 恢复」那条用例单独覆盖。
+ */
 function seedVisitor(stored: string | null) {
   if (stored === null) localStorage.removeItem(VISITOR_THEME_KEY);
   else localStorage.setItem(VISITOR_THEME_KEY, stored);
@@ -65,6 +71,18 @@ function renderToggle() {
       <ThemeToggle />
     </ThemeProvider>,
   );
+}
+
+/**
+ * 只在被动 effect 里记录一次 <html> 是否已是深色：被动 effect 按「子 → 父」顺序跑，
+ * 所以它能看出父级 ThemeProvider 是在 layout 阶段还是被动阶段落地的。
+ */
+function ClassProbe({ onRecord }: { onRecord: (dark: boolean) => void }) {
+  const record = onRecord;
+  React.useEffect(() => {
+    record(document.documentElement.classList.contains("dark"));
+  }, [record]);
+  return null;
 }
 
 const themeButton = () => screen.getByRole("button", { name: /^主题：/ });
@@ -226,5 +244,69 @@ describe("ThemeToggle：三态循环与 localStorage 记忆", () => {
 
     expect(htmlHasDark()).toBe(true);
     expect(themeButton()).toBeInTheDocument();
+  });
+});
+
+describe("刷新后的真实恢复路径：模块初始化就读进 store", () => {
+  it("localStorage 已有合法偏好时，store 初值就是它（不依赖组件同步）", async () => {
+    localStorage.setItem(VISITOR_THEME_KEY, "dark");
+    vi.resetModules();
+    const fresh = await import("@/lib/theme");
+    expect(fresh.useVisitorThemeStore.getState().mode).toBe("dark");
+  });
+
+  it("localStorage 是非法值时，模块初始化后 mode 为 null（回落站点设置）", async () => {
+    localStorage.setItem(VISITOR_THEME_KEY, "purple");
+    vi.resetModules();
+    const fresh = await import("@/lib/theme");
+    expect(fresh.useVisitorThemeStore.getState().mode).toBeNull();
+  });
+});
+
+describe("PublicPage 顶栏：主题按钮在三种登录态下都在，且固定在右侧", () => {
+  it.each([
+    ["pending", 1],
+    ["anonymous", 2],
+    ["authenticated", 3],
+  ] as const)(
+    "%s 状态：按钮都在，且是顶栏最后一个按钮",
+    (authStatus, headerButtonCount) => {
+      seedVisitor(null);
+      seedSite("light");
+      useNavStore.setState({ authStatus });
+      render(
+        <ThemeProvider>
+          <PublicPage onOpenAdmin={vi.fn()} />
+        </ThemeProvider>,
+      );
+
+      const header = document.querySelector("header");
+      expect(header).not.toBeNull();
+      const scoped = within(header as HTMLElement);
+      const toggle = scoped.getByRole("button", { name: /^主题：/ });
+      const buttons = scoped.getAllByRole("button");
+      // 登录/后台按钮出现或消失都不会把主题按钮顶来顶去：它始终在组内最右
+      expect(buttons).toHaveLength(headerButtonCount);
+      expect(buttons.at(-1)).toBe(toggle);
+    },
+  );
+});
+
+describe("无首帧闪烁：主题在 layout 阶段落地（不是被动 effect）", () => {
+  it("子组件的被动 effect 看到的已是深色（Provider 用 useEffect 时这里是 false）", () => {
+    seedVisitor("dark");
+    seedSite("light");
+    const seen: boolean[] = [];
+    render(
+      <ThemeProvider>
+        <ClassProbe
+          onRecord={(dark) => {
+            seen.push(dark);
+          }}
+        />
+      </ThemeProvider>,
+    );
+
+    expect(seen[0]).toBe(true);
   });
 });

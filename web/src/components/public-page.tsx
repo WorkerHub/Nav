@@ -1,5 +1,5 @@
-import { LogIn, LogOut, Settings } from "lucide-react";
 import * as React from "react";
+import { LogIn, LogOut, Settings } from "lucide-react";
 import { FadeIn } from "@/components/glass";
 import { CategoryAnchorBar, CategorySection } from "@/components/link-grid";
 import { LoginDialog } from "@/components/login-dialog";
@@ -70,8 +70,6 @@ export function PublicPage({ onOpenAdmin }: { onOpenAdmin: () => void }) {
         <FadeIn className="mx-auto flex max-w-7xl items-center gap-3">
           <CategoryAnchorBar categories={categories} />
           <div className="ml-auto flex items-center gap-2">
-            {/* 访客个人主题偏好：不受登录态影响，探活中/已登录/未登录都显示 */}
-            <ThemeToggle />
             {authStatus === "pending" ? null : authenticated ? (
               <>
                 <Button
@@ -105,6 +103,11 @@ export function PublicPage({ onOpenAdmin }: { onOpenAdmin: () => void }) {
                 登录
               </Button>
             )}
+            {/*
+              访客个人主题偏好：不受登录态影响（探活中/已登录/未登录都显示）。
+              放在这一组的最右：登录/后台按钮出现或消失时，它不会跟着左右跳动。
+            */}
+            <ThemeToggle />
           </div>
         </FadeIn>
       </header>

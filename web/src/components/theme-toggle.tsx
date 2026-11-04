@@ -27,7 +27,7 @@ export function ThemeToggle() {
     <Button
       variant="ghost"
       size="icon-sm"
-      className="glass text-white/90 hover:text-white"
+      className="glass text-foreground hover:text-foreground"
       aria-label={label}
       title={label}
       onClick={cycle}
