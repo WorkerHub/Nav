@@ -61,6 +61,20 @@ async function switchEngine(name: string) {
   await user.click(await screen.findByRole("menuitem", { name }));
 }
 
+describe("SearchBar 视觉：卡片不做悬停上浮（防上下晃动回归）", () => {
+  // Radix DropdownMenu 打开时给 body 设 pointer-events:none，卡片 :hover 随之丢失：
+  // 带 .glass-hover 时 translateY(-1px) 会来回过渡，表现为切换引擎时搜索框上下晃动。
+  // jsdom 不做布局，只能锁住「卡片没有这个类」这一根因链条的起点。
+  it("搜索卡片只带 .glass，不带悬停上浮的 .glass-hover", () => {
+    const { container } = render(<SearchBar engines={engines} />);
+
+    const card = container.querySelector(".glass");
+    expect(card).not.toBeNull();
+    expect(card).toHaveClass("glass");
+    expect(container.querySelector(".glass-hover")).toBeNull();
+  });
+});
+
 describe("SearchBar 跳转方式：默认新标签打开", () => {
   it("回车在新标签页打开，当前页不动（noopener,noreferrer）", async () => {
     render(<SearchBar engines={engines} />);

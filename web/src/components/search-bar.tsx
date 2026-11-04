@@ -65,7 +65,13 @@ export function SearchBar({
   };
 
   return (
-    <GlassCard className="mx-auto flex w-full max-w-2xl items-center gap-2 p-2">
+    // hover={false}：这张卡片不带上浮位移。Radix DropdownMenu 打开时给 body 设
+    // pointer-events:none，卡片 :hover 丢失，translateY(-1px) 来回过渡 —— 表现为
+    // 切换引擎时搜索框上下晃动。其余卡片的 .glass-hover 全局行为不受影响。
+    <GlassCard
+      hover={false}
+      className="mx-auto flex w-full max-w-2xl items-center gap-2 p-2"
+    >
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
