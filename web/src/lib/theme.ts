@@ -13,6 +13,10 @@ import type { SiteSettings } from "@/lib/types";
  * `matchMedia('(prefers-color-scheme: dark)')` 解析成当前的深/浅色，并监听系统外观
  * 变化实时跟随；解析结果不落盘。
  *
+ * 已确认的口径：「跟随系统」跟的是访客**自己的系统外观**，不是把控制权交回站点默认。
+ * 所以访客一旦点过按钮，站点默认对他就不再生效（除非清掉本机偏好）；站点默认只决定
+ * 从没点过的访客看到什么。
+ *
  * 本机偏好在模块加载时同步读入 store（见 useVisitorThemeStore），所以挂载的那次
  * useLayoutEffect 就能用上它：有偏好的访客首帧就是对色，不会先亮后暗。
  */
@@ -91,7 +95,8 @@ interface VisitorThemeState {
 
 /**
  * 访客本机偏好（zustand）。初值在模块加载时同步读取，因此首帧绘制前就可用；
- * 每次切换都写字面三档（点回「跟随系统」写 `"system"`，不删键）。
+ * 每次切换都写字面三档（点回「跟随系统」写 `"system"`、不删键，因为它跟的是系统外观，
+ * 而不是交回站点默认）。
  */
 export const useVisitorThemeStore = create<VisitorThemeState>((set) => ({
   mode: readVisitorTheme(),
@@ -118,6 +123,7 @@ export function useEffectiveThemeMode(): ThemeMode | null {
 /**
  * 顶栏主题按钮用：当前生效档位 + 切到下一档（写入本机偏好）。
  * 站点数据未加载且没点过时 mode 为 null，cycle 是空操作（按钮也不渲染）。
+ * 循环到「跟随系统」不回退到站点默认：它跟的是访客自己的系统外观（已确认口径）。
  */
 export function useThemeCycle(): {
   mode: ThemeMode | null;
