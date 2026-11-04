@@ -264,13 +264,11 @@ describe("刷新后的真实恢复路径：模块初始化就读进 store", () =
 });
 
 describe("PublicPage 顶栏：主题按钮在三种登录态下都在，且固定在右侧", () => {
-  it.each([
-    ["pending", 1],
-    ["anonymous", 2],
-    ["authenticated", 3],
-  ] as const)(
-    "%s 状态：按钮都在，且是顶栏最后一个按钮",
-    (authStatus, headerButtonCount) => {
+  // 只断言与本功能相关的事实（在不在、是不是组内最后一个），不锁按钮总数：
+  // 以后顶栏加任何按钮都不该让这条用例失败。
+  it.each(["pending", "anonymous", "authenticated"] as const)(
+    "%s 状态：按钮在，且是顶栏最后一个按钮",
+    (authStatus) => {
       seedVisitor(null);
       seedSite("light");
       useNavStore.setState({ authStatus });
@@ -284,10 +282,8 @@ describe("PublicPage 顶栏：主题按钮在三种登录态下都在，且固�
       expect(header).not.toBeNull();
       const scoped = within(header as HTMLElement);
       const toggle = scoped.getByRole("button", { name: /^主题：/ });
-      const buttons = scoped.getAllByRole("button");
       // 登录/后台按钮出现或消失都不会把主题按钮顶来顶去：它始终在组内最右
-      expect(buttons).toHaveLength(headerButtonCount);
-      expect(buttons.at(-1)).toBe(toggle);
+      expect(scoped.getAllByRole("button").at(-1)).toBe(toggle);
     },
   );
 });
@@ -308,5 +304,45 @@ describe("无首帧闪烁：主题在 layout 阶段落地（不是被动 effect�
     );
 
     expect(seen[0]).toBe(true);
+  });
+});
+
+describe("站点主题取值不受约束时的兜底：脏值不让页面崩", () => {
+  /** 后端 settings 表是自由文本，存量行可能是历史脏值 */
+  const dirtyTheme = (value: string) => value as SiteSettings["theme"];
+
+  it("没点过 + 站点主题是非法值：当作未加载，不渲染按钮也不上色（不崩溃）", () => {
+    seedVisitor(null);
+    seedSite(dirtyTheme("purple"));
+
+    expect(() => renderToggle()).not.toThrow();
+    expect(screen.queryByRole("button", { name: /^主题：/ })).toBeNull();
+    expect(htmlHasDark()).toBe(false);
+  });
+
+  it("有本机偏好 + 站点主题是非法值：按偏好正常渲染，不崩溃", () => {
+    seedVisitor("dark");
+    seedSite(dirtyTheme("purple"));
+
+    expect(() => renderToggle()).not.toThrow();
+    expect(htmlHasDark()).toBe(true);
+    expect(themeButton()).toHaveAccessibleName(
+      "主题：深色，点击切换为跟随系统",
+    );
+  });
+
+  it("站点主题是非法值时 PublicPage 顶栏照常渲染（整页不白屏）", () => {
+    seedVisitor(null);
+    seedSite(dirtyTheme("purple"));
+    useNavStore.setState({ authStatus: "anonymous" });
+
+    expect(() =>
+      render(
+        <ThemeProvider>
+          <PublicPage onOpenAdmin={vi.fn()} />
+        </ThemeProvider>,
+      ),
+    ).not.toThrow();
+    expect(screen.getByRole("heading", { level: 1 })).toBeInTheDocument();
   });
 });

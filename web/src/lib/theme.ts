@@ -40,21 +40,31 @@ export function resolveTheme(
   return mode;
 }
 
+/** 合法的三档主题档位（后端 settings 表是自由文本，取到值必须先过这一步）。 */
+export function isThemeMode(value: unknown): value is ThemeMode {
+  return value === "system" || value === "light" || value === "dark";
+}
+
 /**
- * 站点设置里的主题档位（**不含**访客本机偏好）；null = 站点数据尚未加载。
+ * 站点设置里的主题档位（**不含**访客本机偏好）；null = 站点数据尚未加载 / 值不认识。
+ *
+ * 后端 settings 表本来就不带类型约束（PUT 只校验写入，存量行可以是任意字符串），
+ * 所以这里先过 `isThemeMode`：脏值当「没拿到」，回落到「不猜颜色」，不让它一路流到
+ * 图标表 / resolveTheme（否则 `THEME_ICONS[mode]` 会是 undefined，整页渲染直接抛错）。
  *
  * 优先级 adminData > privateData > publicData：后台刚写入的值最新；已登录刷新时
  * `bootstrapSession` 先拉 /api/private，`loadPublic` 可能还没回，取 privateData 才不
  * 会让私有界面先渲染、主题却解析不出来。
  */
 export function useSiteThemeMode(): ThemeMode | null {
-  return useNavStore(
+  const theme = useNavStore(
     (s) =>
       s.adminData?.settings.theme ??
       s.privateData?.settings.theme ??
       s.publicData?.settings.theme ??
       null,
   );
+  return isThemeMode(theme) ? theme : null;
 }
 
 /** 访客本机主题偏好的 localStorage 键（键不存在 = 从未点过切换按钮）。 */
@@ -62,10 +72,6 @@ export const VISITOR_THEME_KEY = "nav.visitor-theme";
 
 /** 三档循环顺序（顶栏按钮每点一次走一格）。 */
 const THEME_CYCLE: readonly ThemeMode[] = ["system", "light", "dark"];
-
-export function isThemeMode(value: unknown): value is ThemeMode {
-  return value === "system" || value === "light" || value === "dark";
-}
 
 /**
  * 读本机偏好：没存过 / 值不合法（被人手改过）/ localStorage 不可用 → null，

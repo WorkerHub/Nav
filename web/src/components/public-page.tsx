@@ -70,12 +70,16 @@ export function PublicPage({ onOpenAdmin }: { onOpenAdmin: () => void }) {
         <FadeIn className="mx-auto flex max-w-7xl items-center gap-3">
           <CategoryAnchorBar categories={categories} />
           <div className="ml-auto flex items-center gap-2">
+            {/*
+              顶栏按钮统一用前景色：浅色档的玻璃芯片是近白底，白字对比度只有 2.4:1。
+              新增顶栏按钮请沿用 text-foreground（深色档它就是近白，两档都成立）。
+            */}
             {authStatus === "pending" ? null : authenticated ? (
               <>
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="glass gap-1.5 text-white/90 hover:text-white"
+                  className="glass gap-1.5 text-foreground hover:text-foreground"
                   onClick={onOpenAdmin}
                 >
                   <Settings className="size-4" aria-hidden="true" />
@@ -84,7 +88,7 @@ export function PublicPage({ onOpenAdmin }: { onOpenAdmin: () => void }) {
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="glass gap-1.5 text-white/90 hover:text-white"
+                  className="glass gap-1.5 text-foreground hover:text-foreground"
                   onClick={() => void logout()}
                 >
                   <LogOut className="size-4" aria-hidden="true" />
@@ -96,7 +100,7 @@ export function PublicPage({ onOpenAdmin }: { onOpenAdmin: () => void }) {
               <Button
                 variant="ghost"
                 size="sm"
-                className="glass gap-1.5 text-white/80 hover:text-white"
+                className="glass gap-1.5 text-foreground hover:text-foreground"
                 onClick={() => setLoginPrompt(true)}
               >
                 <LogIn className="size-4" aria-hidden="true" />
