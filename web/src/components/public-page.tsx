@@ -1,9 +1,10 @@
-import * as React from "react";
 import { LogIn, LogOut, Settings } from "lucide-react";
+import * as React from "react";
 import { FadeIn } from "@/components/glass";
 import { CategoryAnchorBar, CategorySection } from "@/components/link-grid";
 import { LoginDialog } from "@/components/login-dialog";
 import { SearchBar } from "@/components/search-bar";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { useAuthenticated, useNavStore } from "@/lib/nav-store";
 
@@ -69,6 +70,8 @@ export function PublicPage({ onOpenAdmin }: { onOpenAdmin: () => void }) {
         <FadeIn className="mx-auto flex max-w-7xl items-center gap-3">
           <CategoryAnchorBar categories={categories} />
           <div className="ml-auto flex items-center gap-2">
+            {/* 访客个人主题偏好：不受登录态影响，探活中/已登录/未登录都显示 */}
+            <ThemeToggle />
             {authStatus === "pending" ? null : authenticated ? (
               <>
                 <Button
