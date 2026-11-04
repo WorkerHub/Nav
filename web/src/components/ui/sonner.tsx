@@ -11,8 +11,8 @@ import {
 import { useResolvedTheme } from "@/lib/theme";
 
 const Toaster = ({ ...props }: ToasterProps) => {
-  // 主题来自站点设置（ThemeProvider 已解析成 light/dark）；站点数据未加载完时
-  // 交给 sonner 按系统外观走，等解析结果出来再传显式值。
+  // 主题跟随生效档位（访客本机偏好 > 站点设置），由 ThemeProvider 解析成 light/dark；
+  // 站点数据未加载且访客没点过主题按钮时，交给 sonner 按系统外观走。
   const theme: ToasterProps["theme"] = useResolvedTheme() ?? "system";
 
   return (

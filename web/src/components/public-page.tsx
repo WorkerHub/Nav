@@ -4,6 +4,7 @@ import { FadeIn } from "@/components/glass";
 import { CategoryAnchorBar, CategorySection } from "@/components/link-grid";
 import { LoginDialog } from "@/components/login-dialog";
 import { SearchBar } from "@/components/search-bar";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { useAuthenticated, useNavStore } from "@/lib/nav-store";
 
@@ -69,12 +70,16 @@ export function PublicPage({ onOpenAdmin }: { onOpenAdmin: () => void }) {
         <FadeIn className="mx-auto flex max-w-7xl items-center gap-3">
           <CategoryAnchorBar categories={categories} />
           <div className="ml-auto flex items-center gap-2">
+            {/*
+              顶栏按钮统一用前景色：浅色档的玻璃芯片是近白底，白字对比度只有 2.4:1。
+              新增顶栏按钮请沿用 text-foreground（深色档它就是近白，两档都成立）。
+            */}
             {authStatus === "pending" ? null : authenticated ? (
               <>
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="glass gap-1.5 text-white/90 hover:text-white"
+                  className="glass gap-1.5 text-foreground hover:text-foreground"
                   onClick={onOpenAdmin}
                 >
                   <Settings className="size-4" aria-hidden="true" />
@@ -83,7 +88,7 @@ export function PublicPage({ onOpenAdmin }: { onOpenAdmin: () => void }) {
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="glass gap-1.5 text-white/90 hover:text-white"
+                  className="glass gap-1.5 text-foreground hover:text-foreground"
                   onClick={() => void logout()}
                 >
                   <LogOut className="size-4" aria-hidden="true" />
@@ -95,13 +100,18 @@ export function PublicPage({ onOpenAdmin }: { onOpenAdmin: () => void }) {
               <Button
                 variant="ghost"
                 size="sm"
-                className="glass gap-1.5 text-white/80 hover:text-white"
+                className="glass gap-1.5 text-foreground hover:text-foreground"
                 onClick={() => setLoginPrompt(true)}
               >
                 <LogIn className="size-4" aria-hidden="true" />
                 登录
               </Button>
             )}
+            {/*
+              访客个人主题偏好：不受登录态影响（探活中/已登录/未登录都显示）。
+              放在这一组的最右：登录/后台按钮出现或消失时，它不会跟着左右跳动。
+            */}
+            <ThemeToggle />
           </div>
         </FadeIn>
       </header>
