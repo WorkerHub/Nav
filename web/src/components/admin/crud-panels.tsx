@@ -29,6 +29,7 @@ import {
   deleteReplacedAsset,
   useAssetDraftCleanup,
 } from "@/components/admin/asset-upload";
+import { IconPickerField } from "@/components/admin/icon-picker";
 import { SiteIcon } from "@/components/site-icon";
 import {
   adminCreateCategory,
@@ -397,14 +398,14 @@ export function LinkPanel({
                 onChange={(e) => setForm({ ...form, url: e.target.value })}
               />
             </div>
-            <AssetUploadField
+            <IconPickerField
               id="link-icon"
               label="链接图标"
-              purpose="icon"
               value={form.iconUrl}
               onChange={(iconUrl) => setForm({ ...form, iconUrl })}
               onUploaded={draft.track}
-              hint="支持 PNG / JPEG / WebP / GIF / SVG / ICO，≤ 1MB；留空则自动抓 favicon"
+              title={form.title}
+              url={form.url}
             />
             <div className="grid gap-2">
               <Label htmlFor="link-desc">描述</Label>
