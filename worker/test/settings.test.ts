@@ -111,12 +111,11 @@ describe("PUT /api/admin/settings columns", () => {
       siteTitle: "nav",
       backgroundUrl: "",
       logoUrl: "",
-      theme: "dark",
       columns: 0,
     });
     expect(res.status).toBe(200);
     const body = await readJson(res);
-    expect(body).toMatchObject({ siteTitle: "nav", theme: "dark", columns: 0 });
+    expect(body).toMatchObject({ siteTitle: "nav", columns: 0 });
     expect(storedColumns(env)).toBe("0");
   });
 
@@ -293,5 +292,61 @@ describe("settings wallpaperSource (wallpaper_source)", () => {
       env,
     );
     expect((await readJson(res)).keys).toContain("wallpaper_source");
+  });
+});
+
+/**
+ * 站点主题已删除（2026-11-05 定版）：`theme` 不再是站点设置 —— 前后台/公开端点
+ * 的 settings DTO 都不含它，写入白名单也不再接受它；存量的 `theme` 行不删不迁移
+ * （停止读写后即无害残留）。
+ */
+describe("settings theme removed (site-level theme)", () => {
+  let env: Env;
+  let app: Hono;
+  let cookie: string;
+
+  beforeEach(async () => {
+    env = makeEnv();
+    app = makeApp();
+    await runMigrations(env);
+    cookie = await signIn(app, env);
+  });
+
+  it("is absent from the admin and public settings DTOs", async () => {
+    const admin = await readJson(await getSettings(app, env, cookie));
+    expect(admin).not.toHaveProperty("theme");
+
+    const pub = await readJson(await app.request("/api/public", {}, env));
+    expect(pub.settings).not.toHaveProperty("theme");
+  });
+
+  it("ignores theme on PUT (whitelist) and does not write a row", async () => {
+    const res = await putSettings(app, env, cookie, {
+      siteTitle: "nav",
+      theme: "dark",
+    });
+    expect(res.status).toBe(200);
+    const body = await readJson(res);
+    expect(body.siteTitle).toBe("nav");
+    expect(body).not.toHaveProperty("theme");
+    expect(storedSetting(env, "theme")).toBeNull();
+  });
+
+  it("leaves a pre-existing theme row untouched (no migration, no cleanup)", async () => {
+    (env.DB as unknown as SqliteD1).db
+      .prepare("INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)")
+      .run("theme", "light", "2026-11-05T00:00:00.000Z");
+
+    await putSettings(app, env, cookie, { siteTitle: "nav2" });
+    expect(storedSetting(env, "theme")).toBe("light");
+  });
+
+  it("does not list theme in the settings whitelist", async () => {
+    const res = await app.request(
+      "/api/admin/settings/keys",
+      { headers: { cookie } },
+      env,
+    );
+    expect((await readJson(res)).keys).not.toContain("theme");
   });
 });

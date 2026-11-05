@@ -175,6 +175,23 @@
   }
 }
 
+/*
+ * 后台左栏 / 窄屏菜单条的**选中胶囊**：沿用与 .glass 完全相同的 token（半透明底 +
+ * 1px 亮描边 + blur），不引入新配色。
+ *
+ * 刻意放在 @layer 之外：shadcn TabsTrigger 自带的选中底色（data-active:bg-background /
+ * dark:data-active:bg-input/30）在 utilities 层，组件层规则会被它盖掉；这里不写在层里
+ * 才能稳定赢过它（且不需要 !important）。
+ */
+.glass-nav-trigger[data-state="active"] {
+  background: var(--glass-bg);
+  border-color: var(--glass-border);
+  color: var(--foreground);
+  box-shadow: var(--shadow-sm);
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  backdrop-filter: blur(var(--glass-blur));
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

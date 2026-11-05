@@ -4,6 +4,9 @@
  * 两组 DTO：
  *  - SiteData：GET /api/public 与 GET /api/private（分类内嵌链接，无 visibility / 时间戳）。
  *  - Admin*：/api/admin/* 各实体独立 CRUD（扁平列表，含 visibility / 时间戳）。
+ *
+ * 站点设置（SiteSettings）**不含主题**：深浅色不是站点级配置，只由访客本机偏好
+ * 决定（顶栏主题按钮，默认跟随系统），见 `lib/theme.ts`。
  */
 
 export type Visibility = "public" | "private";
@@ -45,7 +48,6 @@ export interface SiteSettings {
   wallpaperSource: "bing" | "custom";
   /** 站点 Logo 图片地址（外链 URL 或上传后的 `/assets/...` 路径，空串表示无） */
   logoUrl: string;
-  theme: "system" | "light" | "dark";
   /** 0–12（后端接受并原样存储），0 表示未配置（用默认值） */
   columns: number;
   /** 搜索在新标签页打开（后端 KV `search_new_tab`，无此键时为 true） */

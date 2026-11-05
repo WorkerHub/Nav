@@ -150,7 +150,6 @@ function seed(): MockState {
         "https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=2400&q=80",
       wallpaperSource: "bing",
       logoUrl: "",
-      theme: "system",
       columns: 8,
       searchNewTab: true,
     },
@@ -163,13 +162,15 @@ function load(): MockState {
     if (raw) {
       // 旧 mock 库没有 searchNewTab / wallpaperSource：按契约默认补齐，避免界面读到 undefined
       const state = JSON.parse(raw) as Omit<MockState, "settings"> & {
-        settings: Partial<SiteSettings>;
+        settings: Partial<SiteSettings> & { theme?: unknown };
       };
       state.settings = {
         searchNewTab: true,
         wallpaperSource: "bing",
         ...state.settings,
       };
+      // 站点主题已删除：旧 mock 库存下的 theme 行不再属于契约，读入时丢掉（不迁移数据）
+      delete state.settings.theme;
       return state as MockState;
     }
   } catch {
