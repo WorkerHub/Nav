@@ -1,6 +1,12 @@
-/** 图标策略（design-system/nav/MASTER.md §1.4）：真实 favicon 优先，失败回退按域名哈希着色的首字圆。 */
+/**
+ * 图标策略（design-system/nav/MASTER.md §1.4）：手动指定的图标优先，其次本站图标端点
+ * `/api/icon`（worker 端解析目标站图标并缓存），两档都失败回退按域名哈希着色的首字圆。
+ */
 
-/** favicon 优先级：手动 icon_url > Google s2 服务 > 目标站 /favicon.ico（由 <SiteIcon> 依次回退） */
+/** 本站图标端点（契约：`GET /api/icon?url=<encodeURIComponent 后的绝对 http(s) URL>`） */
+const SITE_ICON_ENDPOINT = "/api/icon";
+
+/** 图标候选优先级：手动 icon_url > 本站 /api/icon（由 <SiteIcon> 依次回退） */
 export function faviconCandidates(
   url: string,
   iconUrl?: string | null,
@@ -8,9 +14,11 @@ export function faviconCandidates(
   const out: string[] = [];
   if (iconUrl) out.push(iconUrl);
   try {
-    const host = new URL(url).hostname;
-    out.push(`https://www.google.com/s2/favicons?domain=${host}&sz=64`);
-    out.push(`https://${host}/favicon.ico`);
+    const { protocol } = new URL(url);
+    // 端点只接受绝对 http(s) URL：畸形值与非 http(s) 不发请求，直接走首字圆
+    if (protocol === "http:" || protocol === "https:") {
+      out.push(`${SITE_ICON_ENDPOINT}?url=${encodeURIComponent(url)}`);
+    }
   } catch {
     /* malformed url → 首字圆 */
   }
