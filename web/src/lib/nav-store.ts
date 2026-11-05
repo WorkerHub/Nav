@@ -227,8 +227,8 @@ export const useNavStore = create<NavState>((set, get) => ({
   // **所有存活**的 settings 切片，而不是只刷 adminData：
   //  - publicData / privateData 是公开页真正消费的数据，只刷 adminData 会让「后台改站点
   //    标题/背景图 → 返回公开页」仍是旧值，必须刷新才生效；
-  //  - 同一份 settings 也决定主题（settings.theme）：登出 / 401 失效会清空 adminData 与
-  //    privateData，若 publicData 还是旧值，`useSiteThemeMode` 回落时主题会瞬间跳回旧档。
+  //  - 壁纸/标题等设置也从这两片读，登出 / 401 失效会清空 adminData 与 privateData，
+  //    只刷 adminData 会让公开页回到旧值。（主题不在 settings 里，只跟本机偏好走。）
   // 未加载的切片保持原样（不凭空造数据）。新增 settings 写入口时同样必须走这里。
   patchAdminSettings: (settings) => {
     settingsRevision += 1;

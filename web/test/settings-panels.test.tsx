@@ -27,7 +27,6 @@ const baseSettings: SiteSettings = {
   backgroundUrl: "",
   wallpaperSource: "bing",
   logoUrl: "",
-  theme: "system",
   columns: 6,
   searchNewTab: true,
 };
@@ -251,5 +250,26 @@ describe("SettingsPanel：壁纸来源切换（默认 Bing）", () => {
     expect(updateSettingsMock.mock.calls[0][0]).toMatchObject({
       wallpaperSource: "custom",
     });
+  });
+});
+
+describe("SettingsPanel：站点主题已删除", () => {
+  it("面板里没有主题选项（站点设置不再管深浅色）", () => {
+    render(<SettingsPanel settings={baseSettings} onChanged={vi.fn()} />);
+
+    expect(screen.queryByText("主题")).toBeNull();
+    expect(screen.queryByLabelText("选择主题")).toBeNull();
+    // 仍然只剩壁纸来源一个下拉
+    expect(screen.getAllByRole("combobox")).toHaveLength(1);
+  });
+
+  it("保存请求里不带 theme 字段", async () => {
+    const user = userEvent.setup();
+    render(<SettingsPanel settings={baseSettings} onChanged={vi.fn()} />);
+
+    await user.click(screen.getByRole("button", { name: "保存设置" }));
+
+    await waitFor(() => expect(updateSettingsMock).toHaveBeenCalledTimes(1));
+    expect(updateSettingsMock.mock.calls[0][0]).not.toHaveProperty("theme");
   });
 });
