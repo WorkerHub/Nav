@@ -44,11 +44,17 @@ describe("faviconCandidates", () => {
 });
 
 describe("SiteIcon", () => {
+  /** 取当前图片元素；没有就显式失败（不用非空断言）。 */
+  function currentImg(container: HTMLElement): HTMLImageElement {
+    const img = container.querySelector("img");
+    if (!img) throw new Error("expected an <img> in container");
+    return img;
+  }
+
   it("无手动图标：img 指向本站 /api/icon", () => {
     const url = "https://example.com/";
     const { container } = render(<SiteIcon title="示例" url={url} />);
-    const img = container.querySelector("img");
-    expect(img?.getAttribute("src")).toBe(endpoint(url));
+    expect(currentImg(container).getAttribute("src")).toBe(endpoint(url));
   });
 
   it("手动图标优先，失败后才回退端点", () => {
@@ -57,13 +63,10 @@ describe("SiteIcon", () => {
     const { container } = render(
       <SiteIcon title="示例" url={url} iconUrl={iconUrl} />,
     );
-    const img = container.querySelector("img");
-    expect(img?.getAttribute("src")).toBe(iconUrl);
+    expect(currentImg(container).getAttribute("src")).toBe(iconUrl);
 
-    fireEvent.error(img!);
-    expect(container.querySelector("img")?.getAttribute("src")).toBe(
-      endpoint(url),
-    );
+    fireEvent.error(currentImg(container));
+    expect(currentImg(container).getAttribute("src")).toBe(endpoint(url));
   });
 
   it("两档都失败回退首字圆", () => {
@@ -71,8 +74,8 @@ describe("SiteIcon", () => {
     const { container } = render(
       <SiteIcon title="示例" url={url} iconUrl="/assets/assets/icon/a.png" />,
     );
-    fireEvent.error(container.querySelector("img")!);
-    fireEvent.error(container.querySelector("img")!);
+    fireEvent.error(currentImg(container));
+    fireEvent.error(currentImg(container));
 
     expect(container.querySelector("img")).toBeNull();
     expect(screen.getByText("示")).toBeInTheDocument();
@@ -88,12 +91,52 @@ describe("SiteIcon", () => {
     const urlA = "https://a.example.com/";
     const urlB = "https://b.example.com/";
     const { container, rerender } = render(<SiteIcon title="A" url={urlA} />);
-    fireEvent.error(container.querySelector("img")!);
+    fireEvent.error(currentImg(container));
     expect(container.querySelector("img")).toBeNull();
 
     rerender(<SiteIcon title="B" url={urlB} />);
-    expect(container.querySelector("img")?.getAttribute("src")).toBe(
-      endpoint(urlB),
+    expect(currentImg(container).getAttribute("src")).toBe(endpoint(urlB));
+  });
+
+  it("A→B→A 来回切换：切回 A 仍从第一候选重试", () => {
+    const urlA = "https://a.example.com/";
+    const urlB = "https://b.example.com/";
+    const { container, rerender } = render(<SiteIcon title="A" url={urlA} />);
+    fireEvent.error(currentImg(container));
+    expect(container.querySelector("img")).toBeNull();
+
+    rerender(<SiteIcon title="B" url={urlB} />);
+    expect(currentImg(container).getAttribute("src")).toBe(endpoint(urlB));
+
+    rerender(<SiteIcon title="A" url={urlA} />);
+    expect(currentImg(container).getAttribute("src")).toBe(endpoint(urlA));
+  });
+
+  it("手动图标换成另一个后重试新值，不被旧失败跳过", () => {
+    const url = "https://example.com/";
+    const { container, rerender } = render(
+      <SiteIcon title="示例" url={url} iconUrl="/assets/a.png" />,
     );
+    fireEvent.error(currentImg(container));
+    expect(currentImg(container).getAttribute("src")).toBe(endpoint(url));
+
+    rerender(<SiteIcon title="示例" url={url} iconUrl="/assets/b.png" />);
+    expect(currentImg(container).getAttribute("src")).toBe("/assets/b.png");
+  });
+
+  it("旧 src 的 error 不推进新候选（候选变化时换元素）", () => {
+    const urlA = "https://a.example.com/";
+    const urlB = "https://b.example.com/";
+    const { container, rerender } = render(<SiteIcon title="A" url={urlA} />);
+    const oldImg = currentImg(container);
+
+    rerender(<SiteIcon title="B" url={urlB} />);
+    const newImg = currentImg(container);
+    expect(newImg).not.toBe(oldImg);
+    expect(newImg.getAttribute("src")).toBe(endpoint(urlB));
+
+    // 模拟被中止的旧请求补发的 error：旧元素已不在文档里，不得影响新候选
+    fireEvent.error(oldImg);
+    expect(currentImg(container).getAttribute("src")).toBe(endpoint(urlB));
   });
 });
