@@ -15,6 +15,15 @@ const index: IconIndexEntry[] = [
     aliases: [],
     source: "dashboard",
     url: "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/jellyfin.svg",
+    format: "svg",
+  },
+  {
+    slug: "github",
+    name: "GitHub",
+    aliases: [],
+    source: "dashboard",
+    url: "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/github.svg",
+    format: "svg",
   },
   {
     slug: "github",
@@ -22,6 +31,7 @@ const index: IconIndexEntry[] = [
     aliases: [],
     source: "simple",
     url: "https://cdn.simpleicons.org/github",
+    format: "svg",
   },
 ];
 
@@ -80,5 +90,66 @@ describe("IconPickerField", () => {
 
     const input = await screen.findByRole("combobox");
     expect(input).toHaveValue("github");
+  });
+
+  it("输入搜索词后（防抖）出现候选", async () => {
+    const user = userEvent.setup();
+    render(
+      <IconPickerField
+        id="link-icon"
+        label="链接图标"
+        value=""
+        onChange={vi.fn()}
+        title=""
+        url="https://github.com"
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /从图标库选择/ }));
+    const input = await screen.findByRole("combobox");
+    await user.clear(input);
+    await user.type(input, "jellyfin");
+
+    const option = await screen.findByRole("option", { name: /jellyfin/i });
+    expect(option).toBeInTheDocument();
+  });
+
+  it("点移除恢复空值（回落 favicon 自动抓取）", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <IconPickerField
+        id="link-icon"
+        label="链接图标"
+        value="https://cdn.simpleicons.org/github"
+        onChange={onChange}
+        title=""
+        url="https://github.com"
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /移除/ }));
+    expect(onChange).toHaveBeenCalledWith("");
+  });
+
+  it("同 slug 跨源候选 value 唯一（键盘可选不同来源）", async () => {
+    const user = userEvent.setup();
+    render(
+      <IconPickerField
+        id="link-icon"
+        label="链接图标"
+        value=""
+        onChange={vi.fn()}
+        title=""
+        url="https://github.com"
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /从图标库选择/ }));
+    const options = await screen.findAllByRole("option", { name: /github/i });
+    expect(options.length).toBe(2);
+
+    const values = options.map((o) => o.getAttribute("data-value"));
+    expect(new Set(values).size).toBe(2);
   });
 });

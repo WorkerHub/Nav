@@ -7,6 +7,9 @@
 
 export type IconSource = "dashboard" | "selfhst" | "simple";
 
+/** 图标文件格式（构建期已解析，用于前端打 SVG 角标等）。 */
+export type IconFormat = "svg" | "png" | "webp";
+
 export interface IconIndexEntry {
   slug: string;
   name: string;
@@ -14,6 +17,8 @@ export interface IconIndexEntry {
   source: IconSource;
   /** 已解析的 CDN 地址（构建期 svg > png > webp 降级）。 */
   url: string;
+  /** 该 url 实际指向的文件格式（Simple Icons 的 url 无 .svg 后缀但仍是 svg）。 */
+  format: IconFormat;
 }
 
 /** source 排序优先级（候选排序：Dashboard Icons > selfh.st > Simple Icons）。 */
@@ -33,13 +38,18 @@ export function slugify(input: string): string {
 
 let indexPromise: Promise<IconIndexEntry[]> | null = null;
 
-/** 惰性加载索引并模块级缓存（失败时抛错，由调用方决定降级）。 */
+/** 惰性加载索引并模块级缓存；失败不缓存（重置后下次调用重试），由调用方决定降级。 */
 export function loadIconIndex(): Promise<IconIndexEntry[]> {
   if (!indexPromise) {
-    indexPromise = fetch("/icon-index.json").then((res) => {
-      if (!res.ok) throw new Error(`icon index ${res.status}`);
-      return res.json() as Promise<IconIndexEntry[]>;
-    });
+    indexPromise = fetch("/icon-index.json")
+      .then((res) => {
+        if (!res.ok) throw new Error(`icon index ${res.status}`);
+        return res.json() as Promise<IconIndexEntry[]>;
+      })
+      .catch((err) => {
+        indexPromise = null;
+        throw err;
+      });
   }
   return indexPromise;
 }
@@ -67,11 +77,12 @@ export function searchIcons(
     if (score >= 0) scored.push({ entry, score });
   }
 
+  // 先按匹配分（精确 > 前缀 > 包含），再按 source 优先级，避免单源吃满 limit 截断别源的精确命中。
   scored.sort((a, b) => {
+    if (a.score !== b.score) return a.score - b.score;
     const bySource =
       SOURCE_ORDER[a.entry.source] - SOURCE_ORDER[b.entry.source];
     if (bySource !== 0) return bySource;
-    if (a.score !== b.score) return a.score - b.score;
     return a.entry.name.localeCompare(b.entry.name);
   });
 

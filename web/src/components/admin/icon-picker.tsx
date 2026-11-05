@@ -36,7 +36,10 @@ function initialQuery(title: string, url: string): string {
   const trimmed = title.trim();
   if (trimmed) return trimmed;
   try {
-    const host = new URL(url).hostname.replace(/^www\./, "");
+    // 裸主机名（无 scheme）如 github.com 会令 new URL 抛错，补 https:// 兜底。
+    const host = new URL(
+      /^[a-z][a-z0-9+.-]*:\/\//i.test(url) ? url : `https://${url}`,
+    ).hostname.replace(/^www\./, "");
     return host.split(".")[0] ?? "";
   } catch {
     return "";
@@ -117,7 +120,7 @@ export function IconPickerField({
           </Button>
         </PopoverTrigger>
         <PopoverContent align="start" className="w-80 p-0">
-          <Command shouldFilter={false}>
+          <Command shouldFilter={false} label="搜索图标">
             <CommandInput
               value={query}
               onValueChange={setQuery}
@@ -134,7 +137,7 @@ export function IconPickerField({
               {results.map((entry) => (
                 <CommandItem
                   key={`${entry.source}:${entry.slug}`}
-                  value={entry.slug}
+                  value={`${entry.source}:${entry.slug}`}
                   onSelect={() => {
                     onChange(entry.url);
                     setOpen(false);
@@ -150,7 +153,7 @@ export function IconPickerField({
                   <Badge variant="secondary" className="ml-auto shrink-0">
                     {SOURCE_LABEL[entry.source]}
                   </Badge>
-                  {entry.url.endsWith(".svg") ? (
+                  {entry.format === "svg" ? (
                     <Badge variant="outline" className="shrink-0">
                       SVG
                     </Badge>

@@ -17,6 +17,10 @@ const OUT_PATH = resolve(here, "../web/public/icon-index.json");
 
 const FETCH_TIMEOUT_MS = 30_000;
 
+// 任一源解析出少于该条数视为「成功但退化」（如远端返回 200 + 空 JSON），
+// 同样按失败处理：保留旧索引、告警、退出码 0，避免把已提交的索引覆盖成空集。
+const MIN_ENTRIES_PER_SOURCE = 500;
+
 async function fetchJson(url) {
   const res = await fetch(url, {
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
@@ -40,6 +44,7 @@ const SOURCES = [
           aliases: meta.aliases ?? [],
           source: "dashboard",
           url: `https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/${ext}/${slug}.${ext}`,
+          format: ext,
         });
       }
       return out;
@@ -63,6 +68,7 @@ const SOURCES = [
             .filter(Boolean),
           source: "selfhst",
           url: `https://cdn.jsdelivr.net/gh/selfhst/icons/${ext}/${slug}.${ext}`,
+          format: ext,
         });
       }
       return out;
@@ -78,6 +84,7 @@ const SOURCES = [
         aliases: item.aliases?.aka ?? [],
         source: "simple",
         url: `https://cdn.simpleicons.org/${item.slug}`,
+        format: "svg",
       }));
     },
   },
@@ -88,6 +95,11 @@ for (const source of SOURCES) {
   try {
     const raw = await fetchJson(source.url);
     const parsed = source.parse(raw);
+    if (!Array.isArray(parsed) || parsed.length < MIN_ENTRIES_PER_SOURCE) {
+      throw new Error(
+        `解析结果退化（${Array.isArray(parsed) ? parsed.length : 0} 条 < ${MIN_ENTRIES_PER_SOURCE}）`,
+      );
+    }
     entries.push(...parsed);
     console.log(`[icon-index] ${source.name}: ${parsed.length} 条`);
   } catch (err) {

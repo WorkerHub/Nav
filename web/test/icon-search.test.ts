@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { searchIcons, slugify, type IconIndexEntry } from "@/lib/icon-search";
 
 describe("slugify", () => {
@@ -19,6 +19,7 @@ describe("searchIcons", () => {
       aliases: [],
       source: "dashboard",
       url: "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/jellyfin.svg",
+      format: "svg",
     },
     {
       slug: "plex",
@@ -26,6 +27,7 @@ describe("searchIcons", () => {
       aliases: ["plex media server"],
       source: "dashboard",
       url: "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/plex.svg",
+      format: "svg",
     },
     {
       slug: "github",
@@ -33,6 +35,7 @@ describe("searchIcons", () => {
       aliases: [],
       source: "simple",
       url: "https://cdn.simpleicons.org/github",
+      format: "svg",
     },
     {
       slug: "github",
@@ -40,6 +43,23 @@ describe("searchIcons", () => {
       aliases: [],
       source: "dashboard",
       url: "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/github.svg",
+      format: "svg",
+    },
+    {
+      slug: "note",
+      name: "Note",
+      aliases: [],
+      source: "simple",
+      url: "https://cdn.simpleicons.org/note",
+      format: "svg",
+    },
+    {
+      slug: "notebook",
+      name: "Notebook",
+      aliases: [],
+      source: "dashboard",
+      url: "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/notebook.svg",
+      format: "svg",
     },
   ];
 
@@ -59,8 +79,31 @@ describe("searchIcons", () => {
     expect(r.some((x) => x.source === "simple")).toBe(true);
   });
 
+  it("先按匹配分再按 source：精确命中的 simple 排在仅前缀命中的 dashboard 之前", () => {
+    const r = searchIcons(index, "note");
+    expect(r[0]?.slug).toBe("note");
+    expect(r[0]?.source).toBe("simple");
+  });
+
   it("空查询与中文标题返回空", () => {
     expect(searchIcons(index, "")).toEqual([]);
     expect(searchIcons(index, "哔哩哔哩")).toEqual([]);
+  });
+});
+
+describe("loadIconIndex", () => {
+  it("加载失败不缓存，下次调用重试", async () => {
+    vi.resetModules();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, status: 500 })
+      .mockResolvedValueOnce({ ok: true, json: async () => [] });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { loadIconIndex } = await import("@/lib/icon-search");
+
+    await expect(loadIconIndex()).rejects.toThrow("icon index 500");
+    await expect(loadIconIndex()).resolves.toEqual([]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });
