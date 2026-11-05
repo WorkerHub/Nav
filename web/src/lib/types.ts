@@ -41,6 +41,8 @@ export interface SearchEngine {
 export interface SiteSettings {
   siteTitle: string;
   backgroundUrl: string;
+  /** 壁纸来源（后端 KV `wallpaper_source`，无此键时为 bing）：`bing` 每日壁纸 / `custom` 用 backgroundUrl */
+  wallpaperSource: "bing" | "custom";
   /** 站点 Logo 图片地址（外链 URL 或上传后的 `/assets/...` 路径，空串表示无） */
   logoUrl: string;
   theme: "system" | "light" | "dark";

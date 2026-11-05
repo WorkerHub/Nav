@@ -224,3 +224,74 @@ describe("settings searchNewTab (search_new_tab)", () => {
     expect((await readJson(res)).keys).toContain("search_new_tab");
   });
 });
+
+/**
+ * `wallpaperSource`（壁纸来源）：KV 键 `wallpaper_source`，值 `bing`/`custom`。
+ * 存量库无此键时 DTO 按 `bing` 返回；公开端点同样带出该字段给前端。
+ */
+describe("settings wallpaperSource (wallpaper_source)", () => {
+  let env: Env;
+  let app: Hono;
+  let cookie: string;
+
+  beforeEach(async () => {
+    env = makeEnv();
+    app = makeApp();
+    await runMigrations(env);
+    cookie = await signIn(app, env);
+  });
+
+  it("defaults to bing when the key is absent (admin + public DTO)", async () => {
+    expect(storedSetting(env, "wallpaper_source")).toBeNull();
+
+    const admin = await readJson(await getSettings(app, env, cookie));
+    expect(admin.wallpaperSource).toBe("bing");
+
+    const pub = await readJson(await app.request("/api/public", {}, env));
+    expect(pub.settings.wallpaperSource).toBe("bing");
+  });
+
+  it("round-trips custom/bing and mirrors into /api/public", async () => {
+    let res = await putSettings(app, env, cookie, {
+      wallpaperSource: "custom",
+    });
+    expect(res.status).toBe(200);
+    expect((await readJson(res)).wallpaperSource).toBe("custom");
+    expect(storedSetting(env, "wallpaper_source")).toBe("custom");
+    expect(
+      (await readJson(await app.request("/api/public", {}, env))).settings
+        .wallpaperSource,
+    ).toBe("custom");
+
+    res = await putSettings(app, env, cookie, { wallpaperSource: "bing" });
+    expect((await readJson(res)).wallpaperSource).toBe("bing");
+    expect(storedSetting(env, "wallpaper_source")).toBe("bing");
+  });
+
+  it("keeps the stored value when other settings are written", async () => {
+    await putSettings(app, env, cookie, { wallpaperSource: "custom" });
+    const res = await putSettings(app, env, cookie, { siteTitle: "nav2" });
+    expect((await readJson(res)).wallpaperSource).toBe("custom");
+  });
+
+  it("rejects invalid values with 400 and keeps the stored value", async () => {
+    await putSettings(app, env, cookie, { wallpaperSource: "bing" });
+    for (const wallpaperSource of ["custom2", "Bing", "", null, 1]) {
+      const res = await putSettings(app, env, cookie, { wallpaperSource });
+      expect(res.status).toBe(400);
+      expect(await readJson(res)).toEqual({
+        error: "wallpaperSource must be 'bing' or 'custom'",
+      });
+    }
+    expect(storedSetting(env, "wallpaper_source")).toBe("bing");
+  });
+
+  it("lists wallpaper_source in the settings whitelist", async () => {
+    const res = await app.request(
+      "/api/admin/settings/keys",
+      { headers: { cookie } },
+      env,
+    );
+    expect((await readJson(res)).keys).toContain("wallpaper_source");
+  });
+});

@@ -18,6 +18,7 @@ import type { SiteSettings } from "@/lib/types";
 const baseSettings: SiteSettings = {
   siteTitle: "我的导航",
   backgroundUrl: "",
+  wallpaperSource: "bing",
   logoUrl: "",
   theme: "system",
   columns: 6,

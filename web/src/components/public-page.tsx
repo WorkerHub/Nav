@@ -45,6 +45,33 @@ export function PublicPage({ onOpenAdmin }: { onOpenAdmin: () => void }) {
   const settings = siteData?.settings;
   const categories = siteData?.categories ?? [];
 
+  // 壁纸来源（SPEC：缺省 bing）。custom 且填了 backgroundUrl 才用自定义图，
+  // 否则（bing / custom 但 backgroundUrl 为空）都走 Bing 每日壁纸端点。
+  // 站点设置未到达（settings 为 undefined）时先不解析来源、也不发探针，
+  // 以免设置还没回就提前拉取整张大图；此时先显示纯色底。
+  const settingsReady = settings !== undefined;
+  const wallpaperSource = settings?.wallpaperSource ?? "bing";
+  const customBackgroundUrl = settings?.backgroundUrl ?? "";
+  const useBing =
+    settingsReady && (wallpaperSource !== "custom" || !customBackgroundUrl);
+
+  // bing 取图失败时回落：先试 backgroundUrl（非空），再落到纯色底（url 层去掉）。
+  const [bingFailed, setBingFailed] = React.useState(false);
+  React.useEffect(() => {
+    setBingFailed(false);
+    if (!useBing) return;
+    const img = new Image();
+    img.onload = () => setBingFailed(false);
+    img.onerror = () => setBingFailed(true);
+    img.src = "/api/wallpaper/today";
+  }, [useBing]);
+
+  const backgroundUrl = !settingsReady
+    ? ""
+    : useBing && !bingFailed
+      ? "/api/wallpaper/today"
+      : customBackgroundUrl;
+
   // 私有标识：/api/private 的分类 DTO 不含 visibility，用「全量里有、公开列表里没有」推导私有分类。
   const publicIds = new Set(publicData?.categories.map((c) => c.id) ?? []);
   const privateIds = new Set(
@@ -59,7 +86,7 @@ export function PublicPage({ onOpenAdmin }: { onOpenAdmin: () => void }) {
         className="fixed inset-0 -z-10 bg-cover bg-center bg-no-repeat"
         style={{
           backgroundImage: `linear-gradient(rgba(15,23,42,0.55), rgba(15,23,42,0.35)), url(${JSON.stringify(
-            settings?.backgroundUrl ?? "",
+            backgroundUrl,
           )})`,
           backgroundColor: "#0f172a",
         }}

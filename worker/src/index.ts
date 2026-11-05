@@ -7,6 +7,7 @@ import { publicRoutes } from "./routes/public";
 import { privateRoutes } from "./routes/private";
 import { adminRoutes } from "./routes/admin";
 import { setupRoutes } from "./routes/setup";
+import { wallpaperRoutes } from "./routes/wallpaper";
 import { assetPublicRoutes } from "./routes/assets";
 import { getSetting } from "./db/queries/settings";
 import { deleteExpiredSessions } from "./db/queries/users";
@@ -49,6 +50,7 @@ app.route("/api/auth/passkey", webauthnRoutes);
 app.route("/api/public", publicRoutes);
 app.route("/api/private", privateRoutes);
 app.route("/api/admin", adminRoutes);
+app.route("/api/wallpaper", wallpaperRoutes);
 // Setup surface: GET /api/setup/state (canonical), GET /api/setup/status
 // (legacy alias), POST /api/setup (secret-gated upgrade — SETUP-PAGE-SPEC §3).
 app.route("/api", setupRoutes);

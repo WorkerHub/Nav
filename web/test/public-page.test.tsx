@@ -1,6 +1,6 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PublicPage } from "@/components/public-page";
 import { useNavStore } from "@/lib/nav-store";
 import type { SearchEngine, SiteSettings } from "@/lib/types";
@@ -12,6 +12,7 @@ vi.mock("sonner", () => ({
 const baseSettings: SiteSettings = {
   siteTitle: "我的导航",
   backgroundUrl: "",
+  wallpaperSource: "bing",
   logoUrl: "",
   theme: "system",
   columns: 6,
@@ -118,5 +119,127 @@ describe("PublicPage：搜索跳转方式跟随站点设置 searchNewTab", () =>
       "noopener,noreferrer",
     );
     expect(location.href).toBe("http://localhost/start");
+  });
+});
+
+describe("PublicPage：壁纸来源解析（缺省 bing）", () => {
+  /** 背景层是唯一的 aria-hidden 且带 backgroundImage 的 div。 */
+  function backgroundLayer(container: HTMLElement): HTMLElement {
+    const el = Array.from(
+      container.querySelectorAll<HTMLElement>('div[aria-hidden="true"]'),
+    ).find((d) => d.style.backgroundImage);
+    if (!el) throw new Error("背景层未找到");
+    return el;
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("站点设置未到达（publicData 为 null）：不发起探针，背景层不指向端点", () => {
+    useNavStore.setState({
+      publicData: null,
+      privateData: null,
+      authStatus: "anonymous",
+      loginPromptOpen: false,
+      loadPublic: async () => {},
+      loadPrivate: async () => {},
+    });
+    const imageSpy = vi.fn();
+    vi.stubGlobal("Image", imageSpy);
+
+    const { container } = render(<PublicPage onOpenAdmin={vi.fn()} />);
+
+    // 设置没回之前不应提前拉取整张大图。
+    expect(imageSpy).not.toHaveBeenCalled();
+    expect(backgroundLayer(container).style.backgroundImage).not.toContain(
+      "/api/wallpaper/today",
+    );
+  });
+
+  it("wallpaperSource=bing（缺省）+ 无 backgroundUrl：背景层指向 /api/wallpaper/today", () => {
+    seed(baseSettings);
+    const { container } = render(<PublicPage onOpenAdmin={vi.fn()} />);
+    expect(backgroundLayer(container).style.backgroundImage).toContain(
+      "/api/wallpaper/today",
+    );
+  });
+
+  it("wallpaperSource=custom + backgroundUrl 非空：背景层用 backgroundUrl", () => {
+    seed({
+      ...baseSettings,
+      wallpaperSource: "custom",
+      backgroundUrl: "https://cdn.example.com/bg.jpg",
+    });
+    const { container } = render(<PublicPage onOpenAdmin={vi.fn()} />);
+    const bg = backgroundLayer(container).style.backgroundImage;
+    expect(bg).toContain("https://cdn.example.com/bg.jpg");
+    expect(bg).not.toContain("/api/wallpaper/today");
+  });
+
+  it("wallpaperSource=custom 但 backgroundUrl 为空：回落 /api/wallpaper/today", () => {
+    seed({ ...baseSettings, wallpaperSource: "custom", backgroundUrl: "" });
+    const { container } = render(<PublicPage onOpenAdmin={vi.fn()} />);
+    expect(backgroundLayer(container).style.backgroundImage).toContain(
+      "/api/wallpaper/today",
+    );
+  });
+
+  it("wallpaperSource=bing 但 backgroundUrl 非空：仍用 Bing（忽略自定义图）", () => {
+    seed({
+      ...baseSettings,
+      wallpaperSource: "bing",
+      backgroundUrl: "https://cdn.example.com/bg.jpg",
+    });
+    const { container } = render(<PublicPage onOpenAdmin={vi.fn()} />);
+    expect(backgroundLayer(container).style.backgroundImage).toContain(
+      "/api/wallpaper/today",
+    );
+  });
+
+  it("bing 图加载失败：回落 backgroundUrl（非空）", async () => {
+    seed({
+      ...baseSettings,
+      wallpaperSource: "bing",
+      backgroundUrl: "https://cdn.example.com/bg.jpg",
+    });
+
+    class FailingImage {
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      set src(_v: string) {
+        queueMicrotask(() => this.onerror?.());
+      }
+    }
+    vi.stubGlobal("Image", FailingImage);
+
+    const { container } = render(<PublicPage onOpenAdmin={vi.fn()} />);
+
+    await waitFor(() =>
+      expect(backgroundLayer(container).style.backgroundImage).toContain(
+        "https://cdn.example.com/bg.jpg",
+      ),
+    );
+  });
+
+  it("bing 图加载失败且无 backgroundUrl：去掉 url 层（纯色底）", async () => {
+    seed({ ...baseSettings, wallpaperSource: "bing", backgroundUrl: "" });
+
+    class FailingImage {
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      set src(_v: string) {
+        queueMicrotask(() => this.onerror?.());
+      }
+    }
+    vi.stubGlobal("Image", FailingImage);
+
+    const { container } = render(<PublicPage onOpenAdmin={vi.fn()} />);
+
+    await waitFor(() => {
+      const bg = backgroundLayer(container).style.backgroundImage;
+      expect(bg).not.toContain("/api/wallpaper/today");
+      expect(bg).not.toContain("cdn.example.com");
+    });
   });
 });

@@ -250,6 +250,8 @@ export function SettingsPanel({
   const [form, setForm] = React.useState<SiteSettings>({
     ...settings,
     logoUrl: settings.logoUrl ?? "",
+    // 旧数据 / 旧 mock 可能没有该字段：契约默认 Bing
+    wallpaperSource: settings.wallpaperSource ?? "bing",
     // 旧数据 / 旧 mock 可能没有该字段：契约默认开
     searchNewTab: settings.searchNewTab ?? true,
   });
@@ -277,6 +279,30 @@ export function SettingsPanel({
             value={form.siteTitle}
             onChange={(e) => setForm({ ...form, siteTitle: e.target.value })}
           />
+        </div>
+        <div className="grid gap-2">
+          <Label htmlFor="set-wallpaper-source">壁纸来源</Label>
+          <Select
+            value={form.wallpaperSource}
+            onValueChange={(v) =>
+              setForm({
+                ...form,
+                wallpaperSource: v as SiteSettings["wallpaperSource"],
+              })
+            }
+          >
+            <SelectTrigger id="set-wallpaper-source" aria-label="选择壁纸来源">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="bing">Bing 每日壁纸</SelectItem>
+              <SelectItem value="custom">自定义壁纸</SelectItem>
+            </SelectContent>
+          </Select>
+          <p className="text-sm text-muted-foreground">
+            选「自定义壁纸」时使用下方背景图；选「Bing
+            每日壁纸」时忽略背景图地址。
+          </p>
         </div>
         <AssetUploadField
           id="set-bg"

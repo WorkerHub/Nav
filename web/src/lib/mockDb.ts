@@ -148,6 +148,7 @@ function seed(): MockState {
       siteTitle: "我的导航",
       backgroundUrl:
         "https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=2400&q=80",
+      wallpaperSource: "bing",
       logoUrl: "",
       theme: "system",
       columns: 8,
@@ -160,11 +161,15 @@ function load(): MockState {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
-      // 旧 mock 库没有 searchNewTab：按契约默认开补齐，避免界面读到 undefined
+      // 旧 mock 库没有 searchNewTab / wallpaperSource：按契约默认补齐，避免界面读到 undefined
       const state = JSON.parse(raw) as Omit<MockState, "settings"> & {
         settings: Partial<SiteSettings>;
       };
-      state.settings = { searchNewTab: true, ...state.settings };
+      state.settings = {
+        searchNewTab: true,
+        wallpaperSource: "bing",
+        ...state.settings,
+      };
       return state as MockState;
     }
   } catch {
