@@ -159,13 +159,17 @@ export function AdminPage({ onBack }: { onBack: () => void }) {
             {/* 左栏（宽屏固定宽 230px 玻璃面）/ 顶部横排滚动菜单条（窄屏） */}
             <div className="w-full lg:sticky lg:top-20 lg:w-[230px] lg:shrink-0">
               {/*
+                - `bg-[var(--glass-bg)]`：shadcn TabsList 默认变体带 `bg-muted`，它在 utilities 层，
+                  会盖掉 components 层 `.glass` 的半透明底（左栏就变成不透明实色块）。
+                  同组冲突由 cn 的 tailwind-merge 收掉 `bg-muted`，这里只把 `.glass` 的同名令牌
+                  再写一遍，不引入新颜色。
                 - `justify-start`：窄屏内容比容器宽时，默认的 justify-center 会让左半截滚不到
                   （flex 居中溢出的已知行为），头几项就点不到。
                 - `group-data-horizontal/tabs:h-12`：shadcn TabsList 横排默认 h-8（32px），
                   与 36px 的触发区不匹配；这里改回 48px，让玻璃条包住整颗胶囊。
                 - `no-scrollbar`：横向滚动条隐藏但仍可滑（shadcn 自带的 utility）。
               */}
-              <TabsList className="glass no-scrollbar flex w-full items-stretch justify-start gap-1 overflow-x-auto rounded-xl p-1.5 group-data-horizontal/tabs:h-12 lg:flex-col lg:overflow-visible">
+              <TabsList className="glass no-scrollbar flex w-full items-stretch justify-start gap-1 overflow-x-auto rounded-xl bg-[var(--glass-bg)] p-1.5 group-data-horizontal/tabs:h-12 lg:flex-col lg:overflow-visible">
                 {ADMIN_TABS.map(({ value, label, icon: Icon }) => (
                   <TabsTrigger
                     key={value}

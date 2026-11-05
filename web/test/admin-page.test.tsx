@@ -159,7 +159,7 @@ describe("AdminPage 外壳：玻璃顶栏 + 左栏菜单 + 壁纸背景 + 玻璃
     }
   });
 
-  it("宽屏（≥1024px）左栏竖排：Tabs 根是 vertical；窄屏是 horizontal", () => {
+  it("宽屏（≥1024px）左栏竖排：Tabs 与 Radix 都按 vertical（aria-orientation 同步）", () => {
     const spy = vi.spyOn(window, "matchMedia").mockImplementation(
       (query: string) =>
         ({
@@ -180,12 +180,18 @@ describe("AdminPage 外壳：玻璃顶栏 + 左栏菜单 + 壁纸背景 + 玻璃
         "data-orientation",
         "vertical",
       );
+      // 真正的证据：Radix 自己按 context.orientation 写出的 aria-orientation。
+      // 只查根节点的 data-orientation 会漏掉「wrapper 没把 orientation 透传给 Radix」。
+      expect(screen.getByRole("tablist")).toHaveAttribute(
+        "aria-orientation",
+        "vertical",
+      );
     } finally {
       spy.mockRestore();
     }
   });
 
-  it("窄屏：Tabs 根是 horizontal（同一 TabsList 变成顶部横排菜单条）", () => {
+  it("窄屏：Tabs 根与 Radix 都是 horizontal（同一 TabsList 变成顶部横排菜单条）", () => {
     // setup.ts 的 matchMedia 替身一律 matches:false（= 窄屏）
     seedAdmin();
     renderAdmin();
@@ -193,6 +199,54 @@ describe("AdminPage 外壳：玻璃顶栏 + 左栏菜单 + 壁纸背景 + 玻璃
       "data-orientation",
       "horizontal",
     );
+    expect(screen.getByRole("tablist")).toHaveAttribute(
+      "aria-orientation",
+      "horizontal",
+    );
+  });
+
+  it("宽屏竖排：方向键 ↓ 切到下一项（orientation 真的进了 Radix 的键盘映射）", async () => {
+    const user = userEvent.setup();
+    const spy = vi.spyOn(window, "matchMedia").mockImplementation(
+      (query: string) =>
+        ({
+          matches: query === "(min-width: 1024px)",
+          media: query,
+          onchange: null,
+          addListener: () => {},
+          removeListener: () => {},
+          addEventListener: () => {},
+          removeEventListener: () => {},
+          dispatchEvent: () => false,
+        }) as unknown as MediaQueryList,
+    );
+    try {
+      seedAdmin();
+      renderAdmin();
+
+      const first = screen.getByRole("tab", { name: "分类" });
+      first.focus();
+      await user.keyboard("{ArrowDown}");
+
+      expect(screen.getByRole("tab", { name: "链接" })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      );
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("左栏玻璃面：TabsList 保留 .glass，且默认的 bg-muted 被玻璃令牌替掉", () => {
+    seedAdmin();
+    renderAdmin();
+
+    const list = screen.getByRole("tablist");
+    expect(list).toHaveClass("glass");
+    expect(list).toHaveClass("bg-[var(--glass-bg)]");
+    // cn 的 tailwind-merge 必须把 cva 默认变体的 bg-muted 收掉，否则它（utilities 层）
+    // 会盖过 .glass（components 层）的半透明底，左栏变成不透明实色块。
+    expect(list.className).not.toContain("bg-muted");
   });
 
   it("分区内容放在毛玻璃卡片里（.glass）", () => {

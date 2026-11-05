@@ -14,6 +14,10 @@ function Tabs({
     <TabsPrimitive.Root
       data-slot="tabs"
       data-orientation={orientation}
+      // orientation 必须继续传给 Radix Root：它决定方向键映射（竖排时 ↑↓ 切换、
+      // 横排时 ←→ 切换）与 TabsList 的 aria-orientation。只写 data-orientation
+      // 是纯视觉属性，Radix 内部仍按默认横排处理。
+      orientation={orientation}
       className={cn(
         "group/tabs flex gap-2 data-horizontal:flex-col",
         className,
