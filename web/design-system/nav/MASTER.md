@@ -14,7 +14,7 @@
 | 仪表盘/后台 | **Kumo（@cloudflare/kumo）** 可选用于后台表格/设置面板 | 与 shadcn/ui 并存时以 shadcn/ui 为通用层                                              |
 | 图标        | **Lucide**（`lucide-react`）                           | 所有图标来自 Lucide；禁止 emoji 图标、禁止混入其它图标库                              |
 | 动画        | **Motion**（`motion` / framer-motion 后继）            | 入场、拖拽、微交互一律用 Motion；禁止手写 keyframes 做等价动画                        |
-| 布局        | **react-resizable-panels**                             | 当前依赖已移除（后台改为固定宽左栏，见 §1.2）；将来确需可调分栏时再加回依赖           |
+| 布局        | **固定宽左栏**（无分栏依赖）                           | 后台左栏 230px 固定宽（见 §1.2）；将来确需可调分栏时再引入 `react-resizable-panels`   |
 | 拖拽排序    | **@dnd-kit**（core / sortable / utilities）            | 后台分类、链接、搜索引擎排序一律用 dnd-kit                                            |
 | 状态        | **Zustand**                                            | 全局状态（登录态、公开/私有数据、编辑态）用 Zustand；局部态用组件内 state             |
 | 样式        | Tailwind CSS（shadcn/ui 同源）+ CSS 变量 token         | token 走下方变量表，禁止组件里写裸 hex                                                |
