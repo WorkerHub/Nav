@@ -25,6 +25,7 @@ const updateSettingsMock = vi.mocked(adminUpdateSettings);
 const baseSettings: SiteSettings = {
   siteTitle: "我的导航",
   backgroundUrl: "",
+  wallpaperSource: "bing",
   logoUrl: "",
   theme: "system",
   columns: 6,
@@ -197,5 +198,58 @@ describe("SettingsPanel：搜索在新标签页打开开关（默认开）", () 
     );
 
     expect(screen.getByLabelText("搜索在新标签页打开")).toBeChecked();
+  });
+});
+
+describe("SettingsPanel：壁纸来源切换（默认 Bing）", () => {
+  beforeEach(() => {
+    uploadMock.mockReset();
+    updateSettingsMock.mockReset();
+    updateSettingsMock.mockImplementation(async (input) => ({
+      ...baseSettings,
+      ...input,
+    }));
+  });
+
+  it("默认渲染「Bing 每日壁纸」，保存时提交 wallpaperSource=bing", async () => {
+    const user = userEvent.setup();
+
+    render(<SettingsPanel settings={baseSettings} onChanged={vi.fn()} />);
+
+    expect(screen.getByText("壁纸来源")).toBeInTheDocument();
+    expect(screen.getByText("Bing 每日壁纸")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "保存设置" }));
+
+    await waitFor(() => expect(updateSettingsMock).toHaveBeenCalledTimes(1));
+    expect(updateSettingsMock.mock.calls[0][0]).toMatchObject({
+      wallpaperSource: "bing",
+    });
+  });
+
+  it("旧数据缺 wallpaperSource 时按默认 bing 显示", () => {
+    render(
+      <SettingsPanel
+        settings={{ ...baseSettings, wallpaperSource: undefined as never }}
+        onChanged={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("Bing 每日壁纸")).toBeInTheDocument();
+  });
+
+  it("切换到「自定义壁纸」并保存：提交 wallpaperSource=custom", async () => {
+    const user = userEvent.setup();
+
+    render(<SettingsPanel settings={baseSettings} onChanged={vi.fn()} />);
+
+    await user.click(screen.getByRole("combobox", { name: "选择壁纸来源" }));
+    await user.click(screen.getByRole("option", { name: "自定义壁纸" }));
+
+    await user.click(screen.getByRole("button", { name: "保存设置" }));
+
+    await waitFor(() => expect(updateSettingsMock).toHaveBeenCalledTimes(1));
+    expect(updateSettingsMock.mock.calls[0][0]).toMatchObject({
+      wallpaperSource: "custom",
+    });
   });
 });

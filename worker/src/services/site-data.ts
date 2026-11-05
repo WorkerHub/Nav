@@ -43,6 +43,8 @@ export function toSiteSettingsDto(
   return {
     siteTitle: settings.site_title ?? "nav",
     backgroundUrl: settings.background_url ?? "",
+    // 缺省/脏值一律归一 `bing`：存量库没有该键时默认用 Bing 每日壁纸。
+    wallpaperSource: settings.wallpaper_source === "custom" ? "custom" : "bing",
     logoUrl: settings.logo_url ?? "",
     theme: settings.theme ?? "system",
     columns: Number.isFinite(columns) && columns > 0 ? columns : 0,

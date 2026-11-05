@@ -150,6 +150,8 @@ export interface SearchEngineDto {
 export interface SiteSettingsDto {
   siteTitle: string;
   backgroundUrl: string;
+  /** 壁纸来源（settings key `wallpaper_source`）：`bing`（默认）或 `custom`（用 backgroundUrl）。 */
+  wallpaperSource: "bing" | "custom";
   /** Local upload path (`/assets/…`) or an external URL; "" when unset. */
   logoUrl: string;
   theme: string;

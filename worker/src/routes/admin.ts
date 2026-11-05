@@ -414,6 +414,7 @@ const SETTING_KEYS = [
   "theme",
   "columns",
   "search_new_tab",
+  "wallpaper_source",
 ] as const;
 
 adminRoutes.get("/settings", async (c) => {
@@ -465,6 +466,12 @@ adminRoutes.put("/settings", async (c) => {
     if (typeof body.searchNewTab !== "boolean")
       return badRequest("searchNewTab must be a boolean");
     updates.search_new_tab = body.searchNewTab ? "1" : "0";
+  }
+  if (body.wallpaperSource !== undefined) {
+    const wallpaperSource = String(body.wallpaperSource);
+    if (!["bing", "custom"].includes(wallpaperSource))
+      return badRequest("wallpaperSource must be 'bing' or 'custom'");
+    updates.wallpaper_source = wallpaperSource;
   }
 
   for (const [key, value] of Object.entries(updates)) {
