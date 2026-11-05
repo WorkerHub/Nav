@@ -1,9 +1,7 @@
-import * as React from "react";
 import { FadeIn, GlassCard } from "@/components/glass";
 import { SiteIcon } from "@/components/site-icon";
 import { safeHost } from "@/lib/icons";
 import type { SiteCategory, SiteLink } from "@/lib/types";
-import { cn } from "@/lib/utils";
 
 /** 链接卡片：图标 + 标题 + 域名；桌面 7–8 列 / 手机 4 列 */
 function LinkTile({ link, index }: { link: SiteLink; index: number }) {
@@ -67,53 +65,5 @@ export function CategorySection({
       </div>
       <LinkGrid links={category.links} />
     </section>
-  );
-}
-
-/** 顶部锚点栏：滚动定位 + 当前分类高亮 */
-export function CategoryAnchorBar({
-  categories,
-}: {
-  categories: SiteCategory[];
-}) {
-  const [active, setActive] = React.useState<string | null>(null);
-
-  React.useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const visible = entries
-          .filter((e) => e.isIntersecting)
-          .sort(
-            (a, b) => a.boundingClientRect.top - b.boundingClientRect.top,
-          )[0];
-        if (visible) setActive(visible.target.id);
-      },
-      { rootMargin: "-96px 0px -60% 0px", threshold: 0 },
-    );
-    categories.forEach((c) => {
-      const el = document.getElementById(`cat-${c.id}`);
-      if (el) observer.observe(el);
-    });
-    return () => observer.disconnect();
-  }, [categories]);
-
-  return (
-    <nav aria-label="分类锚点" className="flex flex-wrap items-center gap-1">
-      {categories.map((c) => {
-        const isActive = active === `cat-${c.id}`;
-        return (
-          <a
-            key={c.id}
-            href={`#cat-${c.id}`}
-            className={cn(
-              "glass rounded-full px-3.5 py-1.5 text-sm text-white/85 transition-colors hover:text-white",
-              isActive && "bg-white/30 font-semibold text-white",
-            )}
-          >
-            {c.name}
-          </a>
-        );
-      })}
-    </nav>
   );
 }

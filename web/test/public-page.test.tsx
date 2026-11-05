@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PublicPage } from "@/components/public-page";
 import { useNavStore } from "@/lib/nav-store";
-import type { SearchEngine, SiteSettings } from "@/lib/types";
+import type { SearchEngine, SiteCategory, SiteSettings } from "@/lib/types";
 
 vi.mock("sonner", () => ({
   toast: { success: vi.fn(), error: vi.fn() },
@@ -52,6 +52,69 @@ describe("PublicPage 头部：有 Logo 显示 Logo，无 Logo 显示标题文字
     const heading = screen.getByRole("heading", { level: 1 });
     expect(heading).toHaveTextContent("我的导航");
     expect(within(heading).queryByRole("img")).toBeNull();
+  });
+});
+
+describe("PublicPage 顶栏：整条毛玻璃 + 标题入栏 + 分类锚点栏已移除", () => {
+  /** 两个分类各带链接：旧锚点栏在分类多时会横向溢出，现已整块移除。 */
+  const categories: SiteCategory[] = [
+    {
+      id: "cat-dev",
+      name: "开发",
+      icon: null,
+      sortOrder: 0,
+      links: [
+        {
+          id: "link-1",
+          categoryId: "cat-dev",
+          title: "GitHub",
+          url: "https://github.com/",
+          iconUrl: null,
+          description: null,
+          sortOrder: 0,
+        },
+      ],
+    },
+    { id: "cat-read", name: "阅读", icon: null, sortOrder: 1, links: [] },
+  ];
+
+  beforeEach(() => {
+    useNavStore.setState({
+      publicData: { categories, searchEngines: [], settings: baseSettings },
+      privateData: null,
+      authStatus: "anonymous",
+      loginPromptOpen: false,
+      loadPublic: async () => {},
+      loadPrivate: async () => {},
+    });
+  });
+
+  it("站点标题在顶栏（h1）内，顶栏整条毛玻璃", () => {
+    render(<PublicPage onOpenAdmin={vi.fn()} />);
+
+    const header = document.querySelector("header");
+    expect(header).not.toBeNull();
+    // 整条毛玻璃：glass-bar 提供半透明底 + backdrop-blur + 底部分隔线（web/src/index.css）
+    expect(header).toHaveClass("glass-bar", "sticky", "top-0");
+
+    const heading = screen.getByRole("heading", { level: 1 });
+    expect(header?.contains(heading)).toBe(true);
+    expect(heading).toHaveTextContent("我的导航");
+  });
+
+  it("不再渲染分类锚点栏，正文分类区块与链接照旧", () => {
+    render(<PublicPage onOpenAdmin={vi.fn()} />);
+
+    expect(
+      screen.queryByRole("navigation", { name: "分类锚点" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { level: 2, name: "开发" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /GitHub/ })).toHaveAttribute(
+      "href",
+      "https://github.com/",
+    );
   });
 });
 
