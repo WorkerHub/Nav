@@ -154,6 +154,16 @@
     backdrop-filter: blur(var(--glass-blur));
     box-shadow: var(--glass-shadow);
   }
+  /*
+   * 顶栏整条毛玻璃：与 .glass 同一套 token（半透明底 + blur），但全宽铺满、
+   * 不做卡片圆角与四边框，只留底边一条分隔线（MASTER.md §2/§5）。
+   */
+  .glass-bar {
+    background: var(--glass-bg);
+    border-bottom: 1px solid var(--glass-border);
+    -webkit-backdrop-filter: blur(var(--glass-blur));
+    backdrop-filter: blur(var(--glass-blur));
+  }
   .glass-hover {
     transition:
       box-shadow 200ms ease,

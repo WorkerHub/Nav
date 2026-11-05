@@ -1,7 +1,7 @@
 import * as React from "react";
 import { LogIn, LogOut, Settings } from "lucide-react";
 import { FadeIn } from "@/components/glass";
-import { CategoryAnchorBar, CategorySection } from "@/components/link-grid";
+import { CategorySection } from "@/components/link-grid";
 import { LoginDialog } from "@/components/login-dialog";
 import { SearchBar } from "@/components/search-bar";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -9,7 +9,8 @@ import { Button } from "@/components/ui/button";
 import { useAuthenticated, useNavStore } from "@/lib/nav-store";
 
 /**
- * 公开页（/）：背景图 + 毛玻璃搜索框 + 锚点栏 + 「我的导航」图标网格 + 登录后的私有区。
+ * 公开页（/）：背景图 + 整条毛玻璃顶栏（站点标题/Logo + 登录态操作）+ 毛玻璃搜索框
+ * + 「我的导航」图标网格 + 登录后的私有区。
  *
  * 安全口径：未登录时私有区完全不渲染 —— privateData 未加载时组件树里没有私有区块，
  * 数据请求也只发 /api/public（未登录不请求 /api/private）。
@@ -92,11 +93,27 @@ export function PublicPage({ onOpenAdmin }: { onOpenAdmin: () => void }) {
         }}
       />
 
-      {/* 顶部锚点栏 */}
-      <header className="sticky top-0 z-20 px-4 py-3 sm:px-8">
-        <FadeIn className="mx-auto flex max-w-7xl items-center gap-3">
-          <CategoryAnchorBar categories={categories} />
-          <div className="ml-auto flex items-center gap-2">
+      {/* 顶栏：整条毛玻璃，左侧站点标题/Logo，右侧后台、退出与主题切换 */}
+      <header className="glass-bar sticky top-0 z-20">
+        <FadeIn className="mx-auto flex h-14 max-w-7xl items-center gap-3 px-4 sm:px-8">
+          {/*
+            站点标题放在顶栏（h1 语义）：logoUrl 有值显示适配栏高的 Logo 图，否则显示站点标题文字。
+            文字沿用顶栏 text-foreground 口径（与右侧按钮一致）：浅色档玻璃底近白、深色档近黑，两档对比度都成立。
+          */}
+          <h1 className="flex min-w-0 items-center font-heading text-lg font-semibold text-foreground sm:text-xl">
+            {settings?.logoUrl ? (
+              <img
+                src={settings.logoUrl}
+                alt={settings.siteTitle || "站点 Logo"}
+                className="h-8 w-auto max-w-[200px] object-contain"
+              />
+            ) : (
+              <span className="min-w-0 truncate">
+                {settings?.siteTitle ?? "我的导航"}
+              </span>
+            )}
+          </h1>
+          <div className="ml-auto flex shrink-0 items-center gap-2">
             {/*
               顶栏按钮统一用前景色：浅色档的玻璃芯片是近白底，白字对比度只有 2.4:1。
               新增顶栏按钮请沿用 text-foreground（深色档它就是近白，两档都成立）。
@@ -144,19 +161,8 @@ export function PublicPage({ onOpenAdmin }: { onOpenAdmin: () => void }) {
       </header>
 
       <main className="mx-auto flex max-w-7xl flex-col gap-10 px-4 pb-20 sm:px-8">
-        {/* 搜索区：有 Logo 时头部换成 Logo 图，无则维持标题文字 */}
+        {/* 搜索区：站点标题已移入顶栏，这里只剩搜索框 */}
         <FadeIn className="pt-8 sm:pt-16">
-          <h1 className="mb-6 text-center font-heading text-4xl font-semibold text-white drop-shadow">
-            {settings?.logoUrl ? (
-              <img
-                src={settings.logoUrl}
-                alt={settings.siteTitle || "站点 Logo"}
-                className="mx-auto h-14 w-auto max-w-[240px] object-contain"
-              />
-            ) : (
-              (settings?.siteTitle ?? "我的导航")
-            )}
-          </h1>
           {siteData && (
             <SearchBar
               engines={siteData.searchEngines}
