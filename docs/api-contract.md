@@ -60,6 +60,19 @@
 - 回源失败时回退到昨日缓存图（同样 200）；连昨日缓存也无 → `502 {"error":"wallpaper unavailable"}`。
 - 服务端按北京时间自然日缓存当天图（内部缓存条目多保留一天以支持次日回退）；不向上游透传 `content-length` / `x-msedge-ref` / `nel` / `report-to` 等头。
 
+### GET /api/icon
+
+worker 端图标解析器：服务端读目标站 HTML 的 `<link rel="icon">` 声明、探测根文件，抓到后缓存并**直接回图字节**。无鉴权（公共页未登录也要显示图标）。前端在 `iconUrl` 非空时直接用它、不请求本端点；首字圆仍是最终兜底。
+- 入参 `url`：必填，`encodeURIComponent` 后的绝对 URL（链接的 `url` 或搜索引擎 `urlTemplate` 去掉 `{q}`）。服务端只用它的 host 与 scheme，**不使用 path/query**。
+- 缺失/非法（非 http/https、带账号密码、非默认端口）→ `400 {"error":"url must be an absolute http(s) URL"}`，`Cache-Control: no-store`。
+- **站点注册表**：host 必须已登记在本站数据里 —— 公开链接与搜索引擎的 host 匿名可取；只出现在私有链接里的 host 需要有效会话，否则按未登记处理。未登记（含内网/回环/保留地址，它们永远不入表）→ `404 {"error":"icon not found"}`，`Cache-Control: public, max-age=3600`，**不发起任何外部请求**（本端点不是开放代理）。
+- **解析顺序**（全部限定在登记的 origin）：`GET https://{host}/` 读 HTML 里 `rel` 含 `icon` / `apple-touch-icon` 的 `<link>`（svg > png > ico，`sizes` 大者优先；声明落在其他 host 的一律忽略）→ 命中即取该图 → 否则依次探测 `/favicon.ico`、`/favicon.svg`、`/favicon.png`、`/apple-touch-icon.png` → 全失败记为「无图」。
+- **出网约束**：只请求上述 origin 的根路径与固定根文件；`redirect: "manual"`，3xx 一律视为该候选失败；单次 5s 超时、一次解析总预算 8s；HTML 读 256KB、图标读 512KB 上限；带 `user-agent: nav-favicon/1`。
+- 成功 `200`：图标原始字节，`content-type` 为按魔数嗅探出的真实类型（`image/png` / `image/jpeg` / `image/webp` / `image/gif` / `image/svg+xml` / `image/x-icon`），`cache-control: public, max-age=86400`，`x-content-type-options: nosniff`；**不透传任何上游响应头**。
+- 无图标 `404 {"error":"icon not found"}` + `cache-control: public, max-age=3600`。
+- **缓存**：R2 对象 `_cache/favicons/{host}`（保留前缀，不经 `GET /assets/*` 公开），`customMetadata` 记 `{status:"ok"|"none", fetchedAt, mime?, sourceUrl?}`。「有图」30 天、「无图」7 天视为新鲜；过期时先回旧结果、后台重抓（`waitUntil`），**不用定时任务**；同一 host 的并发解析合并为一次。R2 未绑定或读写失败时降级为「现抓现发、不缓存」。
+- 不读也不改写 `links.icon_url`。
+
 ## 私有
 
 ### GET /api/private
@@ -168,6 +181,6 @@ Passkey（WebAuthn，/api/auth/passkey/*，@simplewebauthn/server v14）：
 
 ## 说明
 
-- favicon 自动抓取不在后端做：前端直接请求目标站 / 公共 favicon 服务，失败回退首字圆；后端只存 `iconUrl` 字段。
+- 图标自动抓取由 worker 做：见上方 `GET /api/icon`（服务端解析 + R2 缓存 + 直接回图）。前端只在 `iconUrl` 为空时请求该端点，失败回退首字圆；后端仍只存 `iconUrl` 字段。
 - 点击计数、服务健康状态为预留字段，v1 不实现（SPEC 第 5 节）。
 - 会话 Cookie `nav_session`：HS256 JWT 签名 + `sessions` 表吊销，7 天有效。

@@ -66,6 +66,12 @@ export const ASSET_CACHE_CONTROL = "public, max-age=31536000, immutable";
 /** Objects are keyed `assets/…` and publicly served at `/assets/{key}`. */
 export const ASSET_PUBLIC_PREFIX = "/assets/";
 
+/**
+ * 保留 key 前缀：worker 内部缓存（如图标）落在这里，`GET /assets/*` 一律
+ * 拒绝 —— 它们不是用户上传物，也不该被按 key 猜出来。
+ */
+export const RESERVED_ASSET_KEY_PREFIX = "_cache/";
+
 export function mimeForExt(ext: string): string | null {
   const entry = Object.entries(EXT_BY_KIND).find(([, value]) => value === ext);
   return entry ? MIME_BY_KIND[entry[0] as ImageKind] : null;
