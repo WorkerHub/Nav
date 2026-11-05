@@ -8,6 +8,7 @@ import {
   loadIconRegistry,
   parseIconLinks,
   parseIconTarget,
+  sameHostRedirect,
   sniffIcon,
 } from "../src/services/favicon";
 import { signJWT } from "../src/core/auth";
@@ -524,13 +525,13 @@ describe("GET /api/icon", () => {
     ).toBe("none");
   });
 
-  it("3xx 视为候选失败，绝不跟随重定向", async () => {
+  it("跨域 3xx 不跟随：Location 落到别的 host 就当该候选失败", async () => {
     seedContent(env, [{ id: "l1", url: "https://redirect.example/" }]);
     fetchMock.mockImplementation(async (input: string) =>
       input === "https://redirect.example/"
         ? new Response("", {
-            status: 301,
-            headers: { location: "http://127.0.0.1/" },
+            status: 302,
+            headers: { location: "https://cdn.elsewhere.net/favicon.ico" },
           })
         : NOT_FOUND(),
     );
@@ -542,6 +543,103 @@ describe("GET /api/icon", () => {
         true,
       );
     }
+  });
+
+  it("同域 302 跟随：Location 仍在同一 origin 时跟过去取图", async () => {
+    seedContent(env, [{ id: "l1", url: "https://www.engine.example/" }]);
+    fetchMock.mockImplementation(async (input: string) => {
+      if (input === "https://www.engine.example/") {
+        return new Response("", {
+          status: 302,
+          headers: { location: "/home?hl=zh-CN" },
+        });
+      }
+      if (input === "https://www.engine.example/home?hl=zh-CN") {
+        return htmlResponse("");
+      }
+      if (input === "https://www.engine.example/favicon.ico") {
+        return new Response("", {
+          status: 302,
+          headers: { location: "https://www.engine.example/v2/favicon.ico" },
+        });
+      }
+      if (input === "https://www.engine.example/v2/favicon.ico") {
+        return bytesResponse(ICO_BYTES, "image/x-icon");
+      }
+      return NOT_FOUND();
+    });
+
+    const res = await iconRequest(app, env, "https://www.engine.example/");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("image/x-icon");
+    // 落缓存的来源记的是跟随重定向后的最终地址。
+    expect(
+      r2.objects.get(`${ICON_CACHE_PREFIX}www.engine.example`)?.customMetadata
+        ?.sourceUrl,
+    ).toBe("https://www.engine.example/v2/favicon.ico");
+  });
+
+  it("同域重定向超过 2 跳就停，不再继续跟", async () => {
+    seedContent(env, [{ id: "l1", url: "https://loop.example/" }]);
+    fetchMock.mockImplementation(async (input: string) => {
+      const hop = Number(new URL(String(input)).searchParams.get("hop") ?? 0);
+      return new Response("", {
+        status: 302,
+        headers: {
+          location: String(input).includes("?")
+            ? String(input)
+            : `${input}?hop=${hop + 1}`,
+        },
+      });
+    });
+
+    const res = await iconRequest(app, env, "https://loop.example/");
+    expect(res.status).toBe(404);
+    // 每个候选最多 1 + 2 次请求，不会无限循环。
+    expect(fetchMock.mock.calls.length).toBeLessThanOrEqual(5 * 3);
+  });
+
+  it("重定向目标只放行同一个 host：相对路径放行，跨域 / 降级 http 拒绝", () => {
+    const current = "https://example.com/favicon.ico";
+    expect(sameHostRedirect("/next/icon.png", current, "example.com")).toBe(
+      "https://example.com/next/icon.png",
+    );
+    // http → https 升级允许
+    expect(
+      sameHostRedirect(
+        "https://example.com/icon.ico",
+        "http://example.com/favicon.ico",
+        "example.com",
+      ),
+    ).toBe("https://example.com/icon.ico");
+    // https → http 降级拒绝
+    expect(
+      sameHostRedirect("http://example.com/icon.ico", current, "example.com"),
+    ).toBeNull();
+    // 跨 host（含子域 / CDN）一律拒绝
+    expect(
+      sameHostRedirect(
+        "https://other.example/icon.png",
+        current,
+        "example.com",
+      ),
+    ).toBeNull();
+    expect(
+      sameHostRedirect(
+        "https://cdn.example.com/icon.png",
+        current,
+        "example.com",
+      ),
+    ).toBeNull();
+    // 非默认端口、缺 location
+    expect(
+      sameHostRedirect(
+        "https://example.com:8443/i.png",
+        current,
+        "example.com",
+      ),
+    ).toBeNull();
+    expect(sameHostRedirect(null, current, "example.com")).toBeNull();
   });
 
   it("缓存过期时先回旧图，后台重抓并更新缓存", async () => {

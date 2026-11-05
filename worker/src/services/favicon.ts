@@ -8,7 +8,8 @@
  *   `_cache/favicons/{host}` 下，新鲜度写在对象的 customMetadata.fetchedAt 里。
  *   因此本功能不产生 D1 迁移、不新增绑定，也不需要定时任务刷新。
  * - 出网边界：只访问注册表（本站链接与搜索引擎的 host）登记过的 origin，
- *   且只碰 origin 根路径与四个固定根文件；任何重定向一律不跟随。
+ *   且只碰 origin 根路径与四个固定根文件；重定向只在同一个 host 内最多跟 2 跳
+ *   （允许 http→https 升级），跨域/超跳数一律当该候选失败。
  */
 import type { Env } from "../types";
 import { listLinks, listSearchEngines } from "../db/queries/content";
@@ -34,6 +35,9 @@ const ICON_MAX_BYTES = 512 * 1024;
 /** 单次请求超时，以及一次解析的总预算（防止端点挂住）。 */
 const FETCH_TIMEOUT_MS = 5000;
 const RESOLVE_BUDGET_MS = 8000;
+
+/** 同一个 origin 内最多跟随几跳重定向（302 多来自 UA/地区差异）。 */
+const MAX_REDIRECTS = 2;
 
 /** 站点的 HTML 里最多认几个 `<link rel="icon">` 声明。 */
 const MAX_DECLARED_ICONS = 3;
@@ -248,6 +252,8 @@ interface FetchedBody {
   bytes: Uint8Array;
   /** 小写、无参数部分的 Content-Type；缺失时为空串。 */
   contentType: string;
+  /** 跟随同域重定向后的最终 URL（用作 sourceUrl 诊断）。 */
+  finalUrl: string;
 }
 
 /** HTML 错误页 / JSON 一律不认（XHTML 同样以 `<?xml` 开头，能骗过 SVG 探测）。 */
@@ -325,43 +331,104 @@ async function readCapped(
   return bytes;
 }
 
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
+
 /**
- * 单次抓取：只认 200，`redirect: "manual"` —— 3xx 视为该候选失败，绝不跟着
- * 重定向离开登记过的 origin。
+ * 重定向目标必须仍在**同一个 host** 内（允许 http→https 升级，禁止 https→http 降级）；
+ * 端口仍只允许默认值且不能带账号密码。域外/解析不了一律返回 null —— 宁可
+ * 这一候选失败，也不扩大出网边界。
+ */
+export function sameHostRedirect(
+  location: string | null,
+  currentUrl: string,
+  allowedHost: string,
+): string | null {
+  if (!location) return null;
+  let next: URL;
+  try {
+    next = new URL(location, currentUrl);
+  } catch {
+    return null;
+  }
+  if (next.protocol !== "http:" && next.protocol !== "https:") return null;
+  if (next.hostname.toLowerCase() !== allowedHost) return null;
+  if (next.port !== "" && next.port !== "80" && next.port !== "443") {
+    return null;
+  }
+  if (next.username || next.password) return null;
+
+  // 不允许从 https 降回 http（明文）。
+  let currentSecure = false;
+  try {
+    currentSecure = new URL(currentUrl).protocol === "https:";
+  } catch {
+    return null;
+  }
+  if (currentSecure && next.protocol !== "https:") return null;
+
+  return next.toString();
+}
+
+/**
+ * 单次抓取：`redirect: "manual"` 自己管重定向 —— 只有 Location 仍在 `allowedHost`
+ * 内才跟（最多 {@link MAX_REDIRECTS} 跳），跨域 3xx 当该候选失败。最终只认 200。
  */
 async function fetchLimited(
   url: string,
   accept: string,
   maxBytes: number,
   timeoutMs: number,
+  allowedHost: string,
 ): Promise<FetchedBody | null> {
-  let res: Response;
-  try {
-    res = await fetch(url, {
-      headers: { accept, "user-agent": USER_AGENT },
-      redirect: "manual",
-      signal: AbortSignal.timeout(timeoutMs),
-    });
-  } catch {
-    return null;
-  }
-  if (res.status !== 200) return null;
+  const deadline = Date.now() + timeoutMs;
+  let current = url;
 
-  let bytes: Uint8Array | null;
-  try {
-    bytes = await readCapped(res, maxBytes);
-  } catch {
-    return null;
-  }
-  if (!bytes) return null;
+  for (let hop = 0; hop <= MAX_REDIRECTS; hop += 1) {
+    const remaining = Math.min(FETCH_TIMEOUT_MS, deadline - Date.now());
+    if (remaining <= 0) return null;
 
-  return {
-    bytes,
-    contentType: (res.headers.get("content-type") ?? "")
-      .split(";")[0]
-      .trim()
-      .toLowerCase(),
-  };
+    let res: Response;
+    try {
+      res = await fetch(current, {
+        headers: { accept, "user-agent": USER_AGENT },
+        redirect: "manual",
+        signal: AbortSignal.timeout(remaining),
+      });
+    } catch {
+      return null;
+    }
+
+    if (REDIRECT_STATUSES.has(res.status)) {
+      const next = sameHostRedirect(
+        res.headers.get("location"),
+        current,
+        allowedHost,
+      );
+      if (!next || hop === MAX_REDIRECTS) return null;
+      current = next;
+      continue;
+    }
+    if (res.status !== 200) return null;
+
+    let bytes: Uint8Array | null;
+    try {
+      bytes = await readCapped(res, maxBytes);
+    } catch {
+      return null;
+    }
+    if (!bytes) return null;
+
+    return {
+      bytes,
+      contentType: (res.headers.get("content-type") ?? "")
+        .split(";")[0]
+        .trim()
+        .toLowerCase(),
+      finalUrl: current,
+    };
+  }
+
+  return null;
 }
 
 /** 尝试时长：单个请求上限 5s，且不超过本次解析的剩余预算。 */
@@ -521,6 +588,7 @@ export async function resolveIcon(target: IconTarget): Promise<CachedIcon> {
     "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
     HTML_MAX_BYTES,
     attemptTimeout(deadline),
+    target.host,
   );
   if (html) {
     candidates.push(
@@ -543,6 +611,7 @@ export async function resolveIcon(target: IconTarget): Promise<CachedIcon> {
       "image/*,*/*;q=0.8",
       ICON_MAX_BYTES,
       timeout,
+      target.host,
     );
     if (!candidate) continue;
 
@@ -554,7 +623,8 @@ export async function resolveIcon(target: IconTarget): Promise<CachedIcon> {
       bytes: candidate.bytes,
       mime: image.mime,
       fetchedAt,
-      sourceUrl: url,
+      // 记跟随同域重定向后的最终地址，方便排查。
+      sourceUrl: candidate.finalUrl,
     };
   }
 

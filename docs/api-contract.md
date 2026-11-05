@@ -67,7 +67,7 @@ worker 端图标解析器：服务端读目标站 HTML 的 `<link rel="icon">` �
 - 缺失/非法（非 http/https、带账号密码、非默认端口）→ `400 {"error":"url must be an absolute http(s) URL"}`，`Cache-Control: no-store`。
 - **站点注册表**：host 必须已登记在本站数据里 —— 公开链接与搜索引擎的 host 匿名可取；只出现在私有链接里的 host 需要有效会话，否则按未登记处理。未登记（含内网/回环/保留地址，它们永远不入表）→ `404 {"error":"icon not found"}`，`Cache-Control: public, max-age=3600`，**不发起任何外部请求**（本端点不是开放代理）。
 - **解析顺序**（全部限定在登记的 origin）：`GET https://{host}/` 读 HTML 里 `rel` 含 `icon` / `apple-touch-icon` 的 `<link>`（svg > png > ico，`sizes` 大者优先；声明落在其他 host 的一律忽略）→ 命中即取该图 → 否则依次探测 `/favicon.ico`、`/favicon.svg`、`/favicon.png`、`/apple-touch-icon.png` → 全失败记为「无图」。
-- **出网约束**：只请求上述 origin 的根路径与固定根文件；`redirect: "manual"`，3xx 一律视为该候选失败；单次 5s 超时、一次解析总预算 8s；HTML 读 256KB、图标读 512KB 上限；带 `user-agent: nav-favicon/1`。
+- **出网约束**：只请求上述 origin 的根路径与固定根文件；`redirect: "manual"` 自己管重定向 —— **只跟随同一个 host 内的 3xx（最多 2 跳；允许 http→https 升级，禁止降级到 http）**，`Location` 落到别的 host（含子域、CDN）、非默认端口、带账号密码、解析失败或超出跳数，一律视为该候选失败（不扩大出网边界）；单次 5s 超时、一次解析总预算 8s；HTML 读 256KB、图标读 512KB 上限；带 `user-agent: nav-favicon/1`。
 - 成功 `200`：图标原始字节，`content-type` 为按魔数嗅探出的真实类型（`image/png` / `image/jpeg` / `image/webp` / `image/gif` / `image/svg+xml` / `image/x-icon`），`cache-control: public, max-age=86400`，`x-content-type-options: nosniff`；**不透传任何上游响应头**。
 - 无图标 `404 {"error":"icon not found"}` + `cache-control: public, max-age=3600`。
 - **缓存**：R2 对象 `_cache/favicons/{host}`（保留前缀，不经 `GET /assets/*` 公开），`customMetadata` 记 `{status:"ok"|"none", fetchedAt, mime?, sourceUrl?}`。「有图」30 天、「无图」7 天视为新鲜；过期时先回旧结果、后台重抓（`waitUntil`），**不用定时任务**；同一 host 的并发解析合并为一次。R2 未绑定或读写失败时降级为「现抓现发、不缓存」。
