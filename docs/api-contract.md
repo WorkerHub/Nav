@@ -64,13 +64,15 @@
 
 worker 端图标解析器：服务端读目标站 HTML 的 `<link rel="icon">` 声明、探测根文件，抓到后缓存并**直接回图字节**。无鉴权（公共页未登录也要显示图标）。前端在 `iconUrl` 非空时直接用它、不请求本端点；首字圆仍是最终兜底。
 - 入参 `url`：必填，`encodeURIComponent` 后的绝对 URL（链接的 `url` 或搜索引擎 `urlTemplate` 去掉 `{q}`）。服务端只用它的 host 与 scheme，**不使用 path/query**。
-- 缺失/非法（非 http/https、带账号密码、非默认端口）→ `400 {"error":"url must be an absolute http(s) URL"}`，`Cache-Control: no-store`。
-- **站点注册表**：host 必须已登记在本站数据里 —— 公开链接与搜索引擎的 host 匿名可取；只出现在私有链接里的 host 需要有效会话，否则按未登记处理。未登记（含内网/回环/保留地址，它们永远不入表）→ `404 {"error":"icon not found"}`，`Cache-Control: public, max-age=3600`，**不发起任何外部请求**（本端点不是开放代理）。
-- **解析顺序**（全部限定在登记的 origin）：`GET https://{host}/` 读 HTML 里 `rel` 含 `icon` / `apple-touch-icon` 的 `<link>`（svg > png > ico，`sizes` 大者优先；声明落在其他 host 的一律忽略）→ 命中即取该图 → 否则依次探测 `/favicon.ico`、`/favicon.svg`、`/favicon.png`、`/apple-touch-icon.png` → 全失败记为「无图」。
+- 缺失/非法（非 http/https、带账号密码、非默认端口、**内网/回环/保留地址**）→ `400 {"error":"url must be an absolute http(s) URL"}`，`Cache-Control: no-store` —— 这类目标在参数校验阶段就被拒，不进注册表。
+- **站点注册表**：host 必须已登记在本站数据里 —— 公开链接与搜索引擎的 host 匿名可取；链接的可见性取**更严一方**（私有链接、或私有分类下的 public 链接，都需要有效会话），否则按未登记处理。未登记 → `404 {"error":"icon not found"}`，`Cache-Control: public, max-age=3600`，**不发起任何外部请求**（本端点不是开放代理）。同一 host 有多条链接时注册表优先 https。
+- **解析顺序**（全部限定在登记的 origin）：`GET https://{host}/` 读 HTML 里 `rel` 含 `icon` / `apple-touch-icon` 的 `<link>`（svg > png > ico，`sizes` 大者优先；相对路径按该 HTML 的真实地址解，含跟随重定向后的路径；声明落在其他 host 的一律忽略）→ 命中即取该图 → 否则依次探测 `/favicon.ico`、`/favicon.svg`、`/favicon.png`、`/apple-touch-icon.png` → 全失败记为「无图」。
 - **出网约束**：只请求上述 origin 的根路径与固定根文件；`redirect: "manual"` 自己管重定向 —— **只跟随同一个 host 内的 3xx（最多 2 跳；允许 http→https 升级，禁止降级到 http）**，`Location` 落到别的 host（含子域、CDN）、非默认端口、带账号密码、解析失败或超出跳数，一律视为该候选失败（不扩大出网边界）；单次 5s 超时、一次解析总预算 8s；HTML 读 256KB、图标读 512KB 上限；带 `user-agent: nav-favicon/1`。
 - 成功 `200`：图标原始字节，`content-type` 为按魔数嗅探出的真实类型（`image/png` / `image/jpeg` / `image/webp` / `image/gif` / `image/svg+xml` / `image/x-icon`），`cache-control: public, max-age=86400`，`x-content-type-options: nosniff`；**不透传任何上游响应头**。
+- 成功与失败响应均带 `vary: Cookie`：同一 URL 匿名可能是 404、带会话才是 200，共享缓存不得把会话结果回给匿名访客。
+- **SVG 防护**：第三方 SVG 可能带 `<script>` / 事件属性，因此图标响应一律带 `content-security-policy: default-src 'none'; sandbox` —— `<img>` 加载不受影响，但直接导航到本端点也不会在本站 origin 下执行第三方脚本。
 - 无图标 `404 {"error":"icon not found"}` + `cache-control: public, max-age=3600`。
-- **缓存**：R2 对象 `_cache/favicons/{host}`（保留前缀，不经 `GET /assets/*` 公开），`customMetadata` 记 `{status:"ok"|"none", fetchedAt, mime?, sourceUrl?}`。「有图」30 天、「无图」7 天视为新鲜；过期时先回旧结果、后台重抓（`waitUntil`），**不用定时任务**；同一 host 的并发解析合并为一次。R2 未绑定或读写失败时降级为「现抓现发、不缓存」。
+- **缓存**：R2 对象 `_cache/favicons/{host}`（保留前缀，不经 `GET /assets/*` 公开），`customMetadata` 记 `{status:"ok"|"none", fetchedAt, mime?, sourceUrl?}`。「有图」30 天、「无图」7 天视为新鲜；过期时先回旧结果、后台重抓（`waitUntil`），**不用定时任务**；同一 host 的并发解析合并为一次。**刷新失败时保留已在用的好图（只顺延 `fetchedAt`），不会因一次上游抖动把图标降级成负缓存**。R2 未绑定或读写失败时降级为「现抓现发、不缓存」。
 - 不读也不改写 `links.icon_url`。
 
 ## 私有

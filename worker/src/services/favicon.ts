@@ -12,7 +12,11 @@
  *   （允许 http→https 升级），跨域/超跳数一律当该候选失败。
  */
 import type { Env } from "../types";
-import { listLinks, listSearchEngines } from "../db/queries/content";
+import {
+  listCategories,
+  listLinks,
+  listSearchEngines,
+} from "../db/queries/content";
 import {
   detectBinaryImageKind,
   isSvgDocument,
@@ -86,10 +90,16 @@ export function parseIconTarget(value: string): IconTarget | null {
   const port = url.port;
   if (port !== "" && port !== "80" && port !== "443") return null;
 
-  const host = url.hostname.toLowerCase();
+  // WHATWG URL 不剥主机名末尾的根点（`example.com.`），统一规范化。
+  const host = normalizeHostname(url.hostname);
   if (!isPublicHostname(host)) return null;
 
   return { host, origin: `${url.protocol}//${host}${port ? `:${port}` : ""}` };
+}
+
+/** 小写 + 去掉末尾根点：`localhost.` 与 `localhost` 必须是同一个名字。 */
+function normalizeHostname(rawHost: string): string {
+  return rawHost.toLowerCase().replace(/\.+$/, "");
 }
 
 const BLOCKED_HOST_SUFFIXES = [
@@ -100,7 +110,8 @@ const BLOCKED_HOST_SUFFIXES = [
 ];
 
 /** 内网名字、单标签主机名与私网/保留 IP 字面量一律拒绝。 */
-export function isPublicHostname(host: string): boolean {
+export function isPublicHostname(rawHost: string): boolean {
+  const host = normalizeHostname(rawHost);
   if (!host) return false;
 
   // WHATWG URL 把 IPv6 字面量放在方括号里（`[::1]`）。
@@ -171,12 +182,19 @@ const ATTR_RE =
  * 而 `HTMLRewriter` 在 node 测试环境不存在；这里只关心 `<link>` 标签，正则
  * 足够且可被现有 vitest（environment: node）直接单测。
  *
- * 只接受与 `origin` 同 host 的声明（跨 host/CDN 的图标一律忽略，不扩大出网
- * 边界），并统一用注册表的 origin 重建 URL（丢掉声明里的端口与 scheme 差异）。
+ * `documentUrl` 是这份 HTML 的真实地址（跟随同域重定向后的最终 URL），相对
+ * 路径按它解析 —— 否则 `/` 302 到 `/sub/dir/page` 后，`pic.png` 会被算错一层。
+ * 只接受与文档同 host 的声明（跨 host/CDN 的图标一律忽略，不扩大出网边界）。
  */
-export function parseIconLinks(html: string, origin: string): string[] {
-  const base = `${origin}/`;
-  const baseHost = new URL(base).hostname.toLowerCase();
+export function parseIconLinks(html: string, documentUrl: string): string[] {
+  let base: URL;
+  try {
+    base = new URL(documentUrl);
+  } catch {
+    return [];
+  }
+  const baseHost = base.hostname.toLowerCase();
+  const origin = base.origin;
   const found: Array<{ url: string; score: number }> = [];
   const seen = new Set<string>();
 
@@ -551,21 +569,42 @@ export async function loadIconRegistry(
     if (!rawUrl) return;
     const target = parseIconTarget(rawUrl);
     if (!target) return; // 内网/非法 URL 永远进不了注册表
-    if (!registry.has(target.host)) {
+
+    const existing = registry.get(target.host);
+    // 同一 host 既有 http 又有 https 时优先 https：不要因为插入顺序退到明文。
+    if (!existing) {
+      registry.set(target.host, { origin: target.origin });
+      return;
+    }
+    if (
+      existing.origin.startsWith("http://") &&
+      target.origin.startsWith("https://")
+    ) {
       registry.set(target.host, { origin: target.origin });
     }
   };
 
   try {
-    const [engines, links] = await Promise.all([
+    const [categories, engines, links] = await Promise.all([
+      listCategories(env.DB, prefix),
       listSearchEngines(env.DB, prefix),
       listLinks(env.DB, prefix),
     ]);
+    const privateCategoryIds = new Set(
+      categories
+        .filter((category) => category.visibility === "private")
+        .map((category) => category.id),
+    );
+
     for (const engine of engines) {
       add(engine.url_template.replace("{q}", ""));
     }
     for (const link of links) {
-      if (!options.includePrivate && link.visibility !== "public") continue;
+      // 可见性取更严一方：私有分类下的 public 链接同样不算公开（与 /api/public 一致）。
+      if (!options.includePrivate) {
+        if (link.visibility !== "public") continue;
+        if (privateCategoryIds.has(link.category_id)) continue;
+      }
       add(link.url);
     }
   } catch {
@@ -594,7 +633,8 @@ export async function resolveIcon(target: IconTarget): Promise<CachedIcon> {
     candidates.push(
       ...parseIconLinks(
         new TextDecoder("utf-8").decode(html.bytes),
-        target.origin,
+        // 相对路径按 HTML 的真实地址解，而不是注册表 origin 的根。
+        html.finalUrl,
       ),
     );
   }
@@ -634,12 +674,22 @@ export async function resolveIcon(target: IconTarget): Promise<CachedIcon> {
 /** 同一 host 的并发解析合并：一次页面加载不会对同一个站重复开抓。 */
 const inflight = new Map<string, Promise<CachedIcon>>();
 
-function resolveAndCache(env: Env, target: IconTarget): Promise<CachedIcon> {
+function resolveAndCache(
+  env: Env,
+  target: IconTarget,
+  previous: CachedIcon | null,
+): Promise<CachedIcon> {
   const existing = inflight.get(target.host);
   if (existing) return existing;
 
   const task = resolveIcon(target)
-    .then(async (icon) => {
+    .then(async (fresh) => {
+      // 刷新失败不能把在用的好图标降级成 7 天负缓存：保留旧图，只顺延保鲜期，
+      // 让下一次过期时再重试（旧结果才是它的底线，不是一次失败就能抹掉的）。
+      const icon =
+        fresh.status === "none" && previous?.status === "ok"
+          ? { ...previous, fetchedAt: fresh.fetchedAt }
+          : fresh;
       await writeCache(env.R2, target.host, icon);
       return icon;
     })
@@ -670,8 +720,8 @@ export async function getIcon(
 
   if (cached && isFresh(cached, Date.now())) return cached;
   if (cached) {
-    schedule(resolveAndCache(env, target).catch(() => undefined));
+    schedule(resolveAndCache(env, target, cached).catch(() => undefined));
     return cached;
   }
-  return resolveAndCache(env, target);
+  return resolveAndCache(env, target, null);
 }

@@ -67,21 +67,37 @@ function sql(env: Env) {
 
 function seedContent(
   env: Env,
-  links: Array<{ id: string; url: string; visibility?: string }> = [],
+  links: Array<{
+    id: string;
+    url: string;
+    visibility?: string;
+    categoryId?: string;
+  }> = [],
   engines: Array<{ id: string; urlTemplate: string }> = [],
+  categories: Array<{ id: string; visibility?: string }> = [{ id: "cat-1" }],
 ): void {
   const db = sql(env);
   const now = new Date().toISOString();
-  db.prepare(
-    "INSERT OR IGNORE INTO categories (id, name, icon, sort_order, visibility, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-  ).run("cat-1", "Cat", null, 0, "public", now, now);
+  for (const category of categories) {
+    db.prepare(
+      "INSERT OR IGNORE INTO categories (id, name, icon, sort_order, visibility, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    ).run(
+      category.id,
+      category.id,
+      null,
+      0,
+      category.visibility ?? "public",
+      now,
+      now,
+    );
+  }
 
   for (const link of links) {
     db.prepare(
       "INSERT INTO links (id, category_id, title, url, icon_url, description, sort_order, visibility, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     ).run(
       link.id,
-      "cat-1",
+      link.categoryId ?? categories[0].id,
       link.id,
       link.url,
       null,
@@ -195,6 +211,22 @@ describe("parseIconTarget", () => {
     });
     expect(parseIconTarget("not a url")).toBeNull();
   });
+
+  it("末尾根点不能绕过内网黑名单，公网域名则被规范化", () => {
+    for (const target of [
+      "http://localhost./",
+      "http://printer.local./",
+      "http://box.home.arpa./",
+      "http://metadata.internal./",
+    ]) {
+      expect(parseIconTarget(target), target).toBeNull();
+    }
+    // `example.com.` 与 `example.com` 必须是同一个目标（同一个缓存条目）。
+    expect(parseIconTarget("https://example.com./")).toEqual({
+      host: "example.com",
+      origin: "https://example.com",
+    });
+  });
 });
 
 // ─── HTML 图标声明 ───────────────────────────────────────────────────────────
@@ -225,6 +257,17 @@ describe("parseIconLinks", () => {
     expect(parseIconLinks(html, "https://example.com")).toEqual([
       "https://example.com/a.png",
       "https://example.com/b.ico",
+    ]);
+  });
+
+  it("相对路径按 HTML 的真实地址解（含同域重定向后的子路径）", () => {
+    const html =
+      '<link rel="icon" href="pic.png"><link rel="icon" href="../up.ico">';
+    expect(
+      parseIconLinks(html, "https://rel.example/sub/dir/index.html"),
+    ).toEqual([
+      "https://rel.example/sub/dir/pic.png",
+      "https://rel.example/sub/up.ico",
     ]);
   });
 
@@ -314,6 +357,40 @@ describe("loadIconRegistry", () => {
     });
   });
 
+  it("同一 host 既有 http 又有 https 链接时优先 https", async () => {
+    seedContent(env, [
+      { id: "l1", url: "http://both.example/" },
+      { id: "l2", url: "https://both.example/" },
+    ]);
+    const registry = await loadIconRegistry(env, getTablePrefix(env), {
+      includePrivate: false,
+    });
+    expect(registry.get("both.example")).toEqual({
+      origin: "https://both.example",
+    });
+  });
+
+  it("私有分类下的 public 链接对匿名不算登记（可见性取更严一方）", async () => {
+    seedContent(
+      env,
+      [{ id: "l1", url: "https://hidden.example/", categoryId: "cat-hidden" }],
+      [],
+      [{ id: "cat-hidden", visibility: "private" }],
+    );
+
+    const anonymous = await loadIconRegistry(env, getTablePrefix(env), {
+      includePrivate: false,
+    });
+    expect(anonymous.has("hidden.example")).toBe(false);
+
+    const authed = await loadIconRegistry(env, getTablePrefix(env), {
+      includePrivate: true,
+    });
+    expect(authed.get("hidden.example")).toEqual({
+      origin: "https://hidden.example",
+    });
+  });
+
   it("库还没初始化时退化为空注册表（不抛）", async () => {
     const fresh = makeEnv();
     const registry = await loadIconRegistry(fresh, getTablePrefix(fresh), {
@@ -367,6 +444,11 @@ describe("GET /api/icon", () => {
     expect(res.headers.get("content-type")).toBe("image/svg+xml");
     expect(res.headers.get("cache-control")).toBe("public, max-age=86400");
     expect(res.headers.get("x-content-type-options")).toBe("nosniff");
+    // 第三方 SVG 不能被当本站文档执行脚本；会话相关的响应不能被共享缓存复用。
+    expect(res.headers.get("content-security-policy")).toBe(
+      "default-src 'none'; sandbox",
+    );
+    expect(res.headers.get("vary")).toBe("Cookie");
     // 上游响应头一概不透传。
     expect(res.headers.get("x-upstream-secret")).toBeNull();
     expect(res.headers.get("set-cookie")).toBeNull();
@@ -401,6 +483,7 @@ describe("GET /api/icon", () => {
     expect(res.status).toBe(404);
     expect(await readJson(res)).toEqual({ error: "icon not found" });
     expect(res.headers.get("cache-control")).toBe("public, max-age=3600");
+    expect(res.headers.get("vary")).toBe("Cookie");
     expect(
       r2.objects.get(`${ICON_CACHE_PREFIX}nope.example`)?.customMetadata
         ?.status,
@@ -442,6 +525,33 @@ describe("GET /api/icon", () => {
     });
     expect(authed.status).toBe(200);
     expect(authed.headers.get("content-type")).toBe("image/x-icon");
+  });
+
+  it("私有分类里的 public 链接：匿名 404 且不出网，带会话 200", async () => {
+    seedContent(
+      env,
+      [{ id: "l1", url: "https://hidden.example/", categoryId: "cat-hidden" }],
+      [],
+      [{ id: "cat-hidden", visibility: "private" }],
+    );
+    fetchMock.mockImplementation(async (input: string) => {
+      if (input === "https://hidden.example/") return htmlResponse("");
+      if (input === "https://hidden.example/favicon.ico") {
+        return bytesResponse(ICO_BYTES, "image/x-icon");
+      }
+      return NOT_FOUND();
+    });
+
+    const anonymous = await iconRequest(app, env, "https://hidden.example/");
+    expect(anonymous.status).toBe(404);
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    const cookie = await makeSessionCookie(env);
+    const authed = await iconRequest(app, env, "https://hidden.example/", {
+      cookie,
+    });
+    expect(authed.status).toBe(200);
+    expect(authed.headers.get("vary")).toBe("Cookie");
   });
 
   it("搜索引擎的 host 匿名也能取图", async () => {
@@ -545,6 +655,54 @@ describe("GET /api/icon", () => {
     }
   });
 
+  it("HTML 跟随同域重定向后，相对路径图标按新路径解", async () => {
+    seedContent(env, [{ id: "l1", url: "https://rel.example/" }]);
+    fetchMock.mockImplementation(async (input: string) => {
+      if (input === "https://rel.example/") {
+        return new Response("", {
+          status: 302,
+          headers: { location: "/sub/dir/index.html" },
+        });
+      }
+      if (input === "https://rel.example/sub/dir/index.html") {
+        return htmlResponse('<link rel="icon" href="pic.png">');
+      }
+      if (input === "https://rel.example/sub/dir/pic.png") {
+        return bytesResponse(PNG_BYTES, "image/png");
+      }
+      return NOT_FOUND();
+    });
+
+    const res = await iconRequest(app, env, "https://rel.example/");
+    expect(res.status).toBe(200);
+    expect(
+      r2.objects.get(`${ICON_CACHE_PREFIX}rel.example`)?.customMetadata
+        ?.sourceUrl,
+    ).toBe("https://rel.example/sub/dir/pic.png");
+  });
+
+  it("带 <script> 的第三方 SVG 也带沙箱 CSP，直接导航不会在本站执行脚本", async () => {
+    seedContent(env, [{ id: "l1", url: "https://evil.example/" }]);
+    const sneaky = new TextEncoder().encode(
+      '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>',
+    );
+    fetchMock.mockImplementation(async (input: string) => {
+      if (input === "https://evil.example/") return htmlResponse("");
+      if (input === "https://evil.example/favicon.svg") {
+        return bytesResponse(sneaky, "image/svg+xml");
+      }
+      return NOT_FOUND();
+    });
+
+    const res = await iconRequest(app, env, "https://evil.example/");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("image/svg+xml");
+    expect(res.headers.get("content-security-policy")).toBe(
+      "default-src 'none'; sandbox",
+    );
+    expect(res.headers.get("x-content-type-options")).toBe("nosniff");
+  });
+
   it("同域 302 跟随：Location 仍在同一 origin 时跟过去取图", async () => {
     seedContent(env, [{ id: "l1", url: "https://www.engine.example/" }]);
     fetchMock.mockImplementation(async (input: string) => {
@@ -579,24 +737,27 @@ describe("GET /api/icon", () => {
     ).toBe("https://www.engine.example/v2/favicon.ico");
   });
 
-  it("同域重定向超过 2 跳就停，不再继续跟", async () => {
+  it("同域重定向最多跟 2 跳，第 3 次响应就停", async () => {
     seedContent(env, [{ id: "l1", url: "https://loop.example/" }]);
     fetchMock.mockImplementation(async (input: string) => {
       const hop = Number(new URL(String(input)).searchParams.get("hop") ?? 0);
       return new Response("", {
         status: 302,
-        headers: {
-          location: String(input).includes("?")
-            ? String(input)
-            : `${input}?hop=${hop + 1}`,
-        },
+        headers: { location: `https://loop.example/?hop=${hop + 1}` },
       });
     });
 
     const res = await iconRequest(app, env, "https://loop.example/");
     expect(res.status).toBe(404);
-    // 每个候选最多 1 + 2 次请求，不会无限循环。
-    expect(fetchMock.mock.calls.length).toBeLessThanOrEqual(5 * 3);
+
+    // 每个候选恰好 1 次原始请求 + 2 跳 = 3 次；共 1 个 HTML + 4 个根文件。
+    expect(fetchMock.mock.calls.length).toBe(5 * 3);
+    const urls = fetchMock.mock.calls.map((call) => String(call[0]));
+    // 第 4 次（hop=3）从未发生，说明跳数上限确实生效。
+    expect(urls.some((url) => url.includes("hop=3"))).toBe(false);
+    expect(urls.filter((url) => url === "https://loop.example/")).toHaveLength(
+      1,
+    );
   });
 
   it("重定向目标只放行同一个 host：相对路径放行，跨域 / 降级 http 拒绝", () => {
@@ -677,6 +838,47 @@ describe("GET /api/icon", () => {
           ?.sourceUrl,
       ).toBe("https://stale.example/new.ico");
     });
+  });
+
+  it("后台刷新失败不会把在用的图标改写成负缓存", async () => {
+    seedContent(env, [{ id: "l1", url: "https://flaky.example/" }]);
+    const staleAt = new Date(Date.now() - 40 * 24 * 60 * 60 * 1000);
+    const key = `${ICON_CACHE_PREFIX}flaky.example`;
+    r2.objects.set(key, {
+      bytes: PNG_BYTES,
+      httpMetadata: { contentType: "image/png" },
+      customMetadata: {
+        status: "ok",
+        mime: "image/png",
+        sourceUrl: "https://flaky.example/old.png",
+        fetchedAt: staleAt.toISOString(),
+      },
+      uploaded: staleAt,
+    });
+    // 站点这会儿挂了：所有候选都 503。
+    fetchMock.mockImplementation(async () => new Response("", { status: 503 }));
+
+    const first = await iconRequest(app, env, "https://flaky.example/");
+    expect(first.status).toBe(200);
+
+    // 后台刷新跑完：抓取失败，但缓存必须还是那张好图（不是 none）。
+    await vi.waitFor(() => {
+      expect(r2.objects.get(key)?.customMetadata?.fetchedAt).not.toBe(
+        staleAt.toISOString(),
+      );
+    });
+    const cached = r2.objects.get(key);
+    expect(cached?.customMetadata?.status).toBe("ok");
+    expect(cached?.customMetadata?.mime).toBe("image/png");
+    expect(cached?.customMetadata?.sourceUrl).toBe(
+      "https://flaky.example/old.png",
+    );
+    expect(Array.from(cached?.bytes ?? [])).toEqual(Array.from(PNG_BYTES));
+
+    // 紧随其后的请求仍然拿得到图，而不是 404。
+    const second = await iconRequest(app, env, "https://flaky.example/");
+    expect(second.status).toBe(200);
+    expect(second.headers.get("content-type")).toBe("image/png");
   });
 
   it("同一 host 的并发请求只抓一次", async () => {

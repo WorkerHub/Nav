@@ -19,8 +19,21 @@ export const iconRoutes = new Hono<HonoEnv>();
 const ICON_CACHE_CONTROL = "public, max-age=86400";
 const MISS_CACHE_CONTROL = "public, max-age=3600";
 
+/**
+ * 私有 host 的图标只给带会话的人：同一个 URL 匿名是 404、登录是 200，响应必须
+ * `Vary: Cookie`，否则共享 CDN/代理可能把带会话拿到的结果回给匿名访客。
+ */
+const VARY = "Cookie";
+
+/**
+ * 第三方 SVG 可能带 `<script>` / 事件属性。前端用 `<img>` 加载时不会执行，但
+ * 直接导航到本端点就会在本站 origin 下当文档跑 —— 沙箱化并禁掉一切外部资源。
+ */
+const ICON_CSP = "default-src 'none'; sandbox";
+
 function iconNotFound(c: Context<HonoEnv>): Response {
   c.header("cache-control", MISS_CACHE_CONTROL);
+  c.header("vary", VARY);
   return c.json({ error: "icon not found" }, 404);
 }
 
@@ -42,6 +55,8 @@ function iconResponse(icon: CachedIcon): Response {
       "cache-control": ICON_CACHE_CONTROL,
       // 第三方图片一律当不可信内容：禁止浏览器重新嗅探类型。
       "x-content-type-options": "nosniff",
+      "content-security-policy": ICON_CSP,
+      vary: VARY,
     },
   });
 }
