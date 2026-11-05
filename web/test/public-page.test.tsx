@@ -136,6 +136,27 @@ describe("PublicPage：壁纸来源解析（缺省 bing）", () => {
     vi.unstubAllGlobals();
   });
 
+  it("站点设置未到达（publicData 为 null）：不发起探针，背景层不指向端点", () => {
+    useNavStore.setState({
+      publicData: null,
+      privateData: null,
+      authStatus: "anonymous",
+      loginPromptOpen: false,
+      loadPublic: async () => {},
+      loadPrivate: async () => {},
+    });
+    const imageSpy = vi.fn();
+    vi.stubGlobal("Image", imageSpy);
+
+    const { container } = render(<PublicPage onOpenAdmin={vi.fn()} />);
+
+    // 设置没回之前不应提前拉取整张大图。
+    expect(imageSpy).not.toHaveBeenCalled();
+    expect(backgroundLayer(container).style.backgroundImage).not.toContain(
+      "/api/wallpaper/today",
+    );
+  });
+
   it("wallpaperSource=bing（缺省）+ 无 backgroundUrl：背景层指向 /api/wallpaper/today", () => {
     seed(baseSettings);
     const { container } = render(<PublicPage onOpenAdmin={vi.fn()} />);

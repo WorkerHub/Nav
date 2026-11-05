@@ -252,7 +252,9 @@ describe("settings wallpaperSource (wallpaper_source)", () => {
   });
 
   it("round-trips custom/bing and mirrors into /api/public", async () => {
-    let res = await putSettings(app, env, cookie, { wallpaperSource: "custom" });
+    let res = await putSettings(app, env, cookie, {
+      wallpaperSource: "custom",
+    });
     expect(res.status).toBe(200);
     expect((await readJson(res)).wallpaperSource).toBe("custom");
     expect(storedSetting(env, "wallpaper_source")).toBe("custom");

@@ -7,6 +7,8 @@ export const wallpaperRoutes = new Hono<HonoEnv>();
 const BING_API =
   "https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=1&mkt=zh-CN";
 
+const DAY_SECONDS = 24 * 60 * 60;
+
 /** 北京时间（Asia/Shanghai）当天日期 YYYY-MM-DD，用作按天缓存键。 */
 function beijingDate(d: Date): string {
   return new Intl.DateTimeFormat("en-CA", {
@@ -25,6 +27,33 @@ function secondsUntilNextBeijingMidnight(now: Date): number {
   let next = Math.floor(ms / DAY_MS) * DAY_MS + BEIJING_MIDNIGHT_UTC_MS;
   if (next <= ms) next += DAY_MS;
   return Math.max(1, Math.ceil((next - ms) / 1000));
+}
+
+/**
+ * 按天缓存键。Cache API 只接受**绝对 URL** 作键：裸串（如 `bing-wallpaper:…`）
+ * 在 workerd 会以 “Invalid URL. Cache API keys must be fully-qualified” 拒绝并 500，
+ * 因此以当前请求的 origin 解析出同源绝对 URL。
+ */
+function cacheKey(reqUrl: string, date: string): string {
+  return new URL(`/__cache/bing-wallpaper/${date}`, reqUrl).toString();
+}
+
+/**
+ * 构造图片响应：只放行 content-type / cache-control，**不透传** Bing 上游的
+ * content-length、x-msedge-ref、nel、report-to 等内部头。
+ */
+function buildImageResponse(
+  body: ReadableStream<Uint8Array> | null,
+  contentType: string,
+  maxAge: number,
+): Response {
+  return new Response(body, {
+    status: 200,
+    headers: {
+      "content-type": contentType,
+      "cache-control": `public, max-age=${maxAge}`,
+    },
+  });
 }
 
 /**
@@ -70,33 +99,60 @@ async function fetchBingWallpaper(): Promise<Response | null> {
 // GET /api/wallpaper/today — 同源代理当日 Bing 壁纸（无鉴权，公共页未登录也要取图）。
 wallpaperRoutes.get("/today", async (c) => {
   const now = new Date();
-  const todayKey = `bing-wallpaper:${beijingDate(now)}`;
+  const todayKey = cacheKey(c.req.url, beijingDate(now));
+  const clientMaxAge = secondsUntilNextBeijingMidnight(now);
 
-  // 当天缓存命中直接返回（含存储时写好的 Cache-Control）。
+  // 缓存命中：缓存条目存 2 天（见下方），但发给浏览器的 TTL 始终是「到次日零点」。
   const cached = await caches.default.match(todayKey);
-  if (cached) return cached;
+  if (cached) {
+    return buildImageResponse(
+      cached.body,
+      cached.headers.get("content-type") ?? "image/jpeg",
+      clientMaxAge,
+    );
+  }
 
   const image = await fetchBingWallpaper();
   if (image) {
-    const headers = new Headers(image.headers);
-    headers.set(
-      "cache-control",
-      `public, max-age=${secondsUntilNextBeijingMidnight(now)}`,
+    const contentType = image.headers.get("content-type") ?? "image/jpeg";
+    // 缓存条目多存一天（覆盖次日「昨日回退」窗口），与发给客户端的 TTL 分开：
+    // 客户端只缓存到次日零点，缓存条目保留到再下一个零点。
+    const cacheMaxAge = clientMaxAge + DAY_SECONDS;
+
+    if (!image.body) {
+      return c.json({ error: "wallpaper unavailable" }, 502);
+    }
+    const [clientBody, cacheBody] = image.body.tee();
+    const clientResponse = buildImageResponse(
+      clientBody,
+      contentType,
+      clientMaxAge,
     );
-    const response = new Response(image.body, { status: 200, headers });
+    const cacheResponse = buildImageResponse(
+      cacheBody,
+      contentType,
+      cacheMaxAge,
+    );
     try {
-      await caches.default.put(todayKey, response.clone());
+      await caches.default.put(todayKey, cacheResponse);
     } catch {
       // 缓存是尽力而为：写失败不影响本次取图。
     }
-    return response;
+    return clientResponse;
   }
 
   // 回源失败：宁用昨日缓存图，不用空白。
-  const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-  const yesterdayKey = `bing-wallpaper:${beijingDate(yesterday)}`;
-  const previous = await caches.default.match(yesterdayKey);
-  if (previous) return previous;
+  const yesterday = new Date(now.getTime() - DAY_SECONDS * 1000);
+  const previous = await caches.default.match(
+    cacheKey(c.req.url, beijingDate(yesterday)),
+  );
+  if (previous) {
+    return buildImageResponse(
+      previous.body,
+      previous.headers.get("content-type") ?? "image/jpeg",
+      clientMaxAge,
+    );
+  }
 
   return c.json({ error: "wallpaper unavailable" }, 502);
 });

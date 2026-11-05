@@ -42,6 +42,7 @@
   "settings": {
     "siteTitle": "nav",
     "backgroundUrl": "",
+    "wallpaperSource": "bing",
     "logoUrl": "",
     "theme": "system",
     "columns": 0,
@@ -49,6 +50,15 @@
   }
 }
 ```
+
+`wallpaperSource`：首页壁纸来源，`bing`（默认，Bing 每日壁纸）| `custom`（用 `backgroundUrl` 自定义图）。存量库无此键时按 `bing` 返回。
+
+### GET /api/wallpaper/today
+
+同源代理 Bing 每日壁纸（无鉴权，公共页未登录也要取图）。
+- 200：图片二进制，`Content-Type: image/*`；`Cache-Control: public, max-age=<到下一个北京时间零点的秒数>`。
+- 回源失败时回退到昨日缓存图（同样 200）；连昨日缓存也无 → `502 {"error":"wallpaper unavailable"}`。
+- 服务端按北京时间自然日缓存当天图（内部缓存条目多保留一天以支持次日回退）；不向上游透传 `content-length` / `x-msedge-ref` / `nel` / `report-to` 等头。
 
 ## 私有
 
@@ -113,10 +123,12 @@ Passkey（WebAuthn，/api/auth/passkey/*，@simplewebauthn/server v14）：
 
 ### 站点设置
 
-- `GET /api/admin/settings` → `{siteTitle, backgroundUrl, logoUrl, theme, columns, searchNewTab}`
-- `PUT /api/admin/settings` body 可含 `{siteTitle, backgroundUrl, logoUrl, theme(light|dark|system), columns(0–12), searchNewTab(boolean)}` → 更新后对象
+- `GET /api/admin/settings` → `{siteTitle, backgroundUrl, wallpaperSource, logoUrl, theme, columns, searchNewTab}`
+- `PUT /api/admin/settings` body 可含 `{siteTitle, backgroundUrl, wallpaperSource(bing|custom), logoUrl, theme(light|dark|system), columns(0–12), searchNewTab(boolean)}` → 更新后对象
 
 `searchNewTab`：搜索是否在新标签页打开。存储键 `search_new_tab`，值 `"1"`/`"0"`（同 `totp_enabled` 的 KV 布尔惯例）；库中**无此键**（存量库）时按 `true` 返回。写入只接受布尔值，非布尔返回 400 `searchNewTab must be a boolean`。
+
+`wallpaperSource`：首页壁纸来源。存储键 `wallpaper_source`，值 `"bing"`/`"custom"`；库中**无此键**（存量库）时按 `bing` 返回。写入只接受 `bing`/`custom`，其他值返回 400 `wallpaperSource must be 'bing' or 'custom'`。
 
 `columns` 允许 `0–12`，其中 `0` 表示**未配置**（用默认值）：`0` 原样存入并原样返回，不会被替换成默认列数。`GET /api/admin/settings` 对未配置的库返回 `columns: 0`，所以 `0–12` 都能往返提交；超出范围返回 400 `columns must be between 0 and 12`。
 

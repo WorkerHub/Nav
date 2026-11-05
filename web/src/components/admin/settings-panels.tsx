@@ -300,7 +300,8 @@ export function SettingsPanel({
             </SelectContent>
           </Select>
           <p className="text-sm text-muted-foreground">
-            选「自定义壁纸」时使用下方背景图；选「Bing 每日壁纸」时忽略背景图地址。
+            选「自定义壁纸」时使用下方背景图；选「Bing
+            每日壁纸」时忽略背景图地址。
           </p>
         </div>
         <AssetUploadField
