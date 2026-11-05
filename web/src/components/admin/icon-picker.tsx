@@ -95,7 +95,10 @@ export function IconPickerField({
       setQuery(initialQuery(title, url));
       if (!index) {
         loadIconIndex()
-          .then(setIndex)
+          .then((idx) => {
+            setIndex(idx);
+            setError(null);
+          })
           .catch((err) => setError((err as Error).message));
       }
     }
