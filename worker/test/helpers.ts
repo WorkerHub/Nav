@@ -69,14 +69,22 @@ export function makeEnv(overrides: Partial<Env> = {}): Env {
 export class MemoryR2 {
   readonly objects = new Map<
     string,
-    { bytes: Uint8Array; httpMetadata?: Record<string, string> }
+    {
+      bytes: Uint8Array;
+      httpMetadata?: Record<string, string>;
+      customMetadata?: Record<string, string>;
+      uploaded?: Date;
+    }
   >();
   readonly deleted: string[] = [];
 
   async put(
     key: string,
     value: Uint8Array | ArrayBuffer | ArrayBufferView | string,
-    options?: { httpMetadata?: Record<string, string> },
+    options?: {
+      httpMetadata?: Record<string, string>;
+      customMetadata?: Record<string, string>;
+    },
   ): Promise<unknown> {
     const bytes =
       typeof value === "string"
@@ -90,18 +98,27 @@ export class MemoryR2 {
     this.objects.set(key, {
       bytes: new Uint8Array(bytes),
       httpMetadata: options?.httpMetadata,
+      customMetadata: options?.customMetadata,
+      uploaded: new Date(),
     });
     return { key };
   }
 
+  /** R2ObjectBody 的最小替身：图标缓存读 customMetadata / uploaded / bytes()。 */
   async get(key: string): Promise<unknown | null> {
     const object = this.objects.get(key);
     if (!object) return null;
     return {
       key,
       size: object.bytes.byteLength,
+      etag: "etag",
+      uploaded: object.uploaded ?? new Date(0),
       httpMetadata: object.httpMetadata,
-      body: object.bytes,
+      customMetadata: object.customMetadata,
+      body: new Response(object.bytes).body,
+      bytes: async () => new Uint8Array(object.bytes),
+      arrayBuffer: async () => object.bytes.slice().buffer,
+      text: async () => new TextDecoder().decode(object.bytes),
     };
   }
 

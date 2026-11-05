@@ -23,21 +23,34 @@ export function unauthorized(): Response {
   });
 }
 
-export async function authMiddleware(c: Context<HonoEnv>, next: Next) {
+/**
+ * 会话探测：有效会话返回 user id，否则 null（不抛、不写响应）。`authMiddleware`
+ * 与需要「有会话则放宽」的端点（`GET /api/icon` 的私有 host）共用这一条判断。
+ */
+export async function getSessionUserId(
+  c: Context<HonoEnv>,
+): Promise<string | null> {
   const token = getCookie(c, SESSION_COOKIE);
-  if (!token) return unauthorized();
+  if (!token) return null;
 
   const payload = await verifyJWT(token, c.env.SESSION_SECRET);
-  if (!payload) return unauthorized();
+  if (!payload) return null;
 
   const prefix = getTablePrefix(c.env);
   const session = await findSession(c.env.DB, prefix, payload.sid);
-  if (!session || session.expires_at < nowIso()) return unauthorized();
-  if (session.user_id !== payload.sub) return unauthorized();
+  if (!session || session.expires_at < nowIso()) return null;
+  if (session.user_id !== payload.sub) return null;
 
   const user = await findUserById(c.env.DB, prefix, session.user_id);
-  if (!user?.is_active) return unauthorized();
+  if (!user?.is_active) return null;
 
-  c.set("userId", user.id);
+  return user.id;
+}
+
+export async function authMiddleware(c: Context<HonoEnv>, next: Next) {
+  const userId = await getSessionUserId(c);
+  if (!userId) return unauthorized();
+
+  c.set("userId", userId);
   await next();
 }

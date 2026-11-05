@@ -10,6 +10,7 @@ import {
   assetSizeError,
   isAssetPurpose,
   mimeForExt,
+  RESERVED_ASSET_KEY_PREFIX,
   validateImageUpload,
 } from "../services/assets";
 
@@ -35,7 +36,12 @@ assetPublicRoutes.get("/*", async (c) => {
   if (!bucket) return c.json({ error: "not found" }, 404);
 
   const key = c.req.path.slice(ASSET_PUBLIC_PREFIX.length);
+  // 保留前缀是 worker 内部缓存（图标等）。它们不是用户上传物，也不该被
+  // 按 key 猜出来（猜得到「这个站在主人链接里」这类关联）。
   if (!key || key.includes("..")) return c.json({ error: "not found" }, 404);
+  if (key.startsWith(RESERVED_ASSET_KEY_PREFIX)) {
+    return c.json({ error: "not found" }, 404);
+  }
 
   const object = await bucket.get(key);
   if (!object) return c.json({ error: "not found" }, 404);
