@@ -36,11 +36,10 @@ import {
   adminCreateLink,
   adminDeleteCategory,
   adminDeleteLink,
-  adminReorderCategories,
-  adminReorderLinks,
   adminUpdateCategory,
   adminUpdateLink,
 } from "@/lib/api";
+import { useNavStore } from "@/lib/nav-store";
 import type { AdminCategory, AdminLink, Visibility } from "@/lib/types";
 
 /** 分类 CRUD + dnd-kit 拖拽排序 */
@@ -121,8 +120,13 @@ export function CategoryPanel({
   };
 
   const reorder = async (ids: string[]) => {
-    await adminReorderCategories(ids);
-    onChanged();
+    // 乐观写入在 store 内同步完成（界面立刻定住），成功后不再整表重拉（见 nav-store 排序簿记）。
+    // 失败时 store 已回滚顺序并按服务端刷新，这里只负责提示。
+    try {
+      await useNavStore.getState().reorderCategories(ids);
+    } catch {
+      toast.error("排序失败，已恢复原顺序");
+    }
   };
 
   const entries: SortableEntry[] = categories.map((c) => ({
@@ -309,8 +313,13 @@ export function LinkPanel({
       if (i < firstIdx) before.push(l.id);
       else after.push(l.id);
     });
-    await adminReorderLinks([...before, ...orderedIds, ...after]);
-    onChanged();
+    try {
+      await useNavStore
+        .getState()
+        .reorderLinks([...before, ...orderedIds, ...after]);
+    } catch {
+      toast.error("排序失败，已恢复原顺序");
+    }
   };
 
   return (

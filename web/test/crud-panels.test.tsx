@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  act,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { toast } from "sonner";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -10,12 +16,19 @@ import {
   adminDeleteCategory,
   adminDeleteEngine,
   adminDeleteLink,
+  adminListAll,
+  adminReorderCategories,
+  adminReorderEngines,
+  adminReorderLinks,
   adminUpdateCategory,
   adminUpdateEngine,
   adminUpdateLink,
   adminUploadAsset,
+  type AdminData,
 } from "@/lib/api";
+import { resetAdminOrderState, useNavStore } from "@/lib/nav-store";
 import type { AdminCategory, AdminLink, SearchEngine } from "@/lib/types";
+import { deferred } from "./deferred";
 
 vi.mock("sonner", () => ({
   toast: { success: vi.fn(), error: vi.fn() },
@@ -34,6 +47,10 @@ vi.mock("@/lib/api", async (importOriginal) => {
     adminDeleteEngine: vi.fn(),
     adminUpdateLink: vi.fn(),
     adminUpdateEngine: vi.fn(),
+    adminListAll: vi.fn(),
+    adminReorderCategories: vi.fn(),
+    adminReorderLinks: vi.fn(),
+    adminReorderEngines: vi.fn(),
   };
 });
 
@@ -46,6 +63,10 @@ const deleteLinkMock = vi.mocked(adminDeleteLink);
 const deleteEngineMock = vi.mocked(adminDeleteEngine);
 const updateLinkMock = vi.mocked(adminUpdateLink);
 const updateEngineMock = vi.mocked(adminUpdateEngine);
+const listAllMock = vi.mocked(adminListAll);
+const reorderCategoriesMock = vi.mocked(adminReorderCategories);
+const reorderLinksMock = vi.mocked(adminReorderLinks);
+const reorderEnginesMock = vi.mocked(adminReorderEngines);
 const toastErrorMock = vi.mocked(toast.error);
 const toastSuccessMock = vi.mocked(toast.success);
 
@@ -99,6 +120,75 @@ async function openRow(
   await user.click(screen.getByRole("button", { name: `编辑 ${label}` }));
 }
 
+// ─── 排序：面板从 store 取数据（与 AdminPage 一致），乐观写入才会立刻重渲染 ─────────
+
+function CategoryHarness({ onChanged }: { onChanged: () => void }) {
+  const categories = useNavStore((s) => s.adminData?.categories ?? []);
+  return <CategoryPanel categories={categories} onChanged={onChanged} />;
+}
+
+function LinkHarness({ onChanged }: { onChanged: () => void }) {
+  const categories = useNavStore((s) => s.adminData?.categories ?? []);
+  const links = useNavStore((s) => s.adminData?.links ?? []);
+  return (
+    <LinkPanel categories={categories} links={links} onChanged={onChanged} />
+  );
+}
+
+function EngineHarness({ onChanged }: { onChanged: () => void }) {
+  const engines = useNavStore((s) => s.adminData?.searchEngines ?? []);
+  return <SearchEnginePanel engines={engines} onChanged={onChanged} />;
+}
+
+const adminBase: AdminData = {
+  categories: [category, { ...category, id: "c2", name: "阅读", sortOrder: 1 }],
+  links: [
+    link,
+    {
+      ...link,
+      id: "l2",
+      categoryId: "c2",
+      title: "少数派",
+      url: "https://sspai.com",
+      sortOrder: 1,
+    },
+    {
+      ...link,
+      id: "l3",
+      categoryId: "c1",
+      title: "MDN",
+      url: "https://developer.mozilla.org",
+      sortOrder: 2,
+    },
+  ],
+  searchEngines: [
+    engine,
+    {
+      ...engine,
+      id: "e2",
+      name: "Bing",
+      urlTemplate: "https://www.bing.com/search?q={q}",
+      sortOrder: 1,
+      isDefault: false,
+    },
+  ],
+  settings: {
+    siteTitle: "我的导航",
+    backgroundUrl: "",
+    wallpaperSource: "bing",
+    logoUrl: "",
+    columns: 6,
+    searchNewTab: true,
+  },
+};
+
+/** 列表当前顺序（以行尾编辑按钮的 aria-label 为准）。 */
+function editLabels(): (string | null)[] {
+  return screen
+    .getAllByRole("button", { name: /^编辑 / })
+    .map((el) => el.getAttribute("aria-label"));
+}
+
 beforeEach(() => {
   uploadMock.mockReset();
   deleteMock.mockReset();
@@ -114,6 +204,16 @@ beforeEach(() => {
   deleteCategoryMock.mockResolvedValue(undefined);
   deleteLinkMock.mockResolvedValue(undefined);
   deleteEngineMock.mockResolvedValue(undefined);
+  resetAdminOrderState();
+  listAllMock.mockReset();
+  reorderCategoriesMock.mockReset();
+  reorderLinksMock.mockReset();
+  reorderEnginesMock.mockReset();
+  listAllMock.mockResolvedValue(adminBase);
+  reorderCategoriesMock.mockResolvedValue(undefined);
+  reorderLinksMock.mockResolvedValue(undefined);
+  reorderEnginesMock.mockResolvedValue(undefined);
+  useNavStore.setState({ adminData: adminBase, authStatus: "authenticated" });
   createCategoryMock.mockImplementation(async (input) => ({
     ...category,
     id: "c2",
@@ -566,5 +666,95 @@ describe("链接 / 搜索引擎：删除同样二次确认", () => {
     await waitFor(() => expect(deleteEngineMock).toHaveBeenCalledWith("e1"));
     expect(onChanged).toHaveBeenCalled();
     expect(toastSuccessMock).toHaveBeenCalledWith("搜索引擎已删除");
+  });
+});
+
+describe("排序：乐观即时生效，成功后不再整表重拉", () => {
+  it("分类：点下移后顺序立刻变化（请求仍在飞），onChanged 0 次", async () => {
+    const pending = deferred();
+    reorderCategoriesMock.mockReturnValue(pending.promise);
+    const onChanged = vi.fn();
+    const user = userEvent.setup();
+    render(<CategoryHarness onChanged={onChanged} />);
+
+    await user.click(screen.getByRole("button", { name: "下移 开发" }));
+
+    // 请求还没落地，界面已经是新顺序（旧实现这里会等两次往返）
+    expect(editLabels()).toEqual(["编辑 阅读", "编辑 开发"]);
+    expect(reorderCategoriesMock).toHaveBeenCalledWith(["c2", "c1"]);
+    expect(onChanged).not.toHaveBeenCalled();
+
+    await act(async () => {
+      pending.resolve();
+    });
+    // 成功即以本地为准：不再 loadAdmin 对账
+    expect(listAllMock).not.toHaveBeenCalled();
+    expect(editLabels()).toEqual(["编辑 阅读", "编辑 开发"]);
+  });
+
+  it("搜索引擎：点下移后顺序立刻变化，onChanged 0 次", async () => {
+    const pending = deferred();
+    reorderEnginesMock.mockReturnValue(pending.promise);
+    const onChanged = vi.fn();
+    const user = userEvent.setup();
+    render(<EngineHarness onChanged={onChanged} />);
+
+    await user.click(screen.getByRole("button", { name: "下移 Google" }));
+
+    expect(editLabels()).toEqual(["编辑 Bing", "编辑 Google"]);
+    expect(reorderEnginesMock).toHaveBeenCalledWith(["e2", "e1"]);
+    expect(onChanged).not.toHaveBeenCalled();
+
+    await act(async () => {
+      pending.resolve();
+    });
+    expect(listAllMock).not.toHaveBeenCalled();
+  });
+
+  it("链接（按分类过滤）：提交重建后的全局 ids，跨分类相对顺序不变", async () => {
+    const pending = deferred();
+    reorderLinksMock.mockReturnValue(pending.promise);
+    const onChanged = vi.fn();
+    const user = userEvent.setup();
+    render(<LinkHarness onChanged={onChanged} />);
+
+    await user.click(screen.getByRole("combobox", { name: "选择分类" }));
+    await user.click(screen.getByRole("option", { name: "开发" }));
+    await waitFor(() => expect(screen.queryByText("少数派")).toBeNull());
+
+    await user.click(screen.getByRole("button", { name: "下移 GitHub" }));
+
+    expect(editLabels()).toEqual(["编辑 MDN", "编辑 GitHub"]);
+    // 全局 ids：本分类内换位，其他分类的「少数派」仍排在后面
+    expect(reorderLinksMock).toHaveBeenCalledWith(["l3", "l1", "l2"]);
+    expect(onChanged).not.toHaveBeenCalled();
+    expect(
+      useNavStore.getState().adminData?.links.map((item) => item.id),
+    ).toEqual(["l3", "l1", "l2"]);
+
+    await act(async () => {
+      pending.resolve();
+    });
+  });
+
+  it("排序失败：回滚到操作前顺序并 toast，按服务端再刷一次", async () => {
+    const pending = deferred();
+    reorderCategoriesMock.mockReturnValue(pending.promise);
+    const user = userEvent.setup();
+    render(<CategoryHarness onChanged={vi.fn()} />);
+
+    await user.click(screen.getByRole("button", { name: "下移 开发" }));
+    expect(editLabels()).toEqual(["编辑 阅读", "编辑 开发"]);
+
+    await act(async () => {
+      pending.reject(new Error("boom"));
+    });
+
+    await waitFor(() =>
+      expect(toastErrorMock).toHaveBeenCalledWith("排序失败，已恢复原顺序"),
+    );
+    expect(editLabels()).toEqual(["编辑 开发", "编辑 阅读"]);
+    // 后端逐条 UPDATE 无事务：失败后以服务端为准再刷一次
+    expect(listAllMock).toHaveBeenCalled();
   });
 });
