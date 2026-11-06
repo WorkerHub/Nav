@@ -16,8 +16,29 @@ import type { SearchEngine } from "@/lib/types";
  * 顶部多引擎搜索框：引擎切换（下拉）、`/` 键全局聚焦、Enter 按 {q} 模板跳转。
  *
  * `openInNewTab`（站点设置 `searchNewTab`，默认开）：开时结果在新标签页打开，
- * 起始页与会话保留；关时沿用当前页跳转。两种方式对所有引擎（含自定义）一致生效。
+ * 起始页与会话保留；关时在当前页跳转。两种方式对所有引擎（含自定义）一致生效。
+ * 两条路径都不向搜索站发送 Referer（见 `navigateSameTabWithoutReferrer`）。
  */
+
+/**
+ * 当前页跳转且不带 Referer：用临时锚点（`rel="noreferrer"`）点击完成导航。
+ *
+ * `window.location.href` 无法抑制来源，跨站跳转时浏览器按默认策略（
+ * strict-origin-when-cross-origin）会把本页 origin 作为 Referer 一起发出去。
+ * 锚点的 `rel="noreferrer"` 只作用于这一次导航（强制 no-referrer），因此不动
+ * 页面级 `<meta name="referrer">`，其它外跳与资源加载的 Referer 行为一律不变。
+ */
+export function navigateSameTabWithoutReferrer(url: string) {
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.rel = "noreferrer";
+  anchor.target = "_self";
+  document.body.append(anchor);
+  anchor.click();
+  // 锚点是临时的：点击已触发导航，随即从 DOM 撤掉（不留空节点、不改布局）
+  anchor.remove();
+}
+
 export function SearchBar({
   engines,
   openInNewTab = true,
@@ -61,7 +82,7 @@ export function SearchBar({
       window.open(url, "_blank", "noopener,noreferrer");
       return;
     }
-    window.location.href = url;
+    navigateSameTabWithoutReferrer(url);
   };
 
   return (
