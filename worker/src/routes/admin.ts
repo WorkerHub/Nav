@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import {
   getTablePrefix,
+  isLinkStyle,
   isVisibility,
   type HonoEnv,
   type SiteSettingsDto,
@@ -621,6 +622,7 @@ const SETTING_KEYS = [
   "columns",
   "search_new_tab",
   "wallpaper_source",
+  "link_style",
 ] as const;
 
 adminRoutes.get("/settings", async (c) => {
@@ -672,6 +674,12 @@ adminRoutes.put("/settings", async (c) => {
     if (!["bing", "custom"].includes(wallpaperSource))
       return badRequest("wallpaperSource must be 'bing' or 'custom'");
     updates.wallpaper_source = wallpaperSource;
+  }
+  if (body.linkStyle !== undefined) {
+    // 枚举值直接落库；非法/非字符串一律 400，不落任何键（含同包其他设置）。
+    if (!isLinkStyle(body.linkStyle))
+      return badRequest("linkStyle must be 'classic', 'compact' or 'wide'");
+    updates.link_style = body.linkStyle;
   }
 
   for (const [key, value] of Object.entries(updates)) {

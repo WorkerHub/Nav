@@ -296,6 +296,103 @@ describe("settings wallpaperSource (wallpaper_source)", () => {
 });
 
 /**
+ * `linkStyle`（链接样式）：KV 键 `link_style`，值 `classic`/`compact`/`wide`。
+ * 存量库无此键时 DTO 按 `classic` 返回；公开端点同样带出该字段给前端。
+ */
+describe("settings linkStyle (link_style)", () => {
+  let env: Env;
+  let app: Hono;
+  let cookie: string;
+
+  beforeEach(async () => {
+    env = makeEnv();
+    app = makeApp();
+    await runMigrations(env);
+    cookie = await signIn(app, env);
+  });
+
+  it("defaults to classic when the key is absent (admin + public DTO)", async () => {
+    expect(storedSetting(env, "link_style")).toBeNull();
+
+    const admin = await readJson(await getSettings(app, env, cookie));
+    expect(admin.linkStyle).toBe("classic");
+
+    const pub = await readJson(await app.request("/api/public", {}, env));
+    expect(pub.settings.linkStyle).toBe("classic");
+
+    // Reading the default never writes a row.
+    expect(storedSetting(env, "link_style")).toBeNull();
+  });
+
+  it("round-trips classic/compact/wide and mirrors into /api/public", async () => {
+    for (const linkStyle of ["compact", "wide", "classic"] as const) {
+      const res = await putSettings(app, env, cookie, { linkStyle });
+      expect(res.status).toBe(200);
+      expect((await readJson(res)).linkStyle).toBe(linkStyle);
+      expect(storedSetting(env, "link_style")).toBe(linkStyle);
+      expect(
+        (await readJson(await app.request("/api/public", {}, env))).settings
+          .linkStyle,
+      ).toBe(linkStyle);
+    }
+  });
+
+  it("keeps the stored value when other settings are written", async () => {
+    await putSettings(app, env, cookie, { linkStyle: "wide" });
+    const res = await putSettings(app, env, cookie, { siteTitle: "nav2" });
+    const body = await readJson(res);
+    expect(body.siteTitle).toBe("nav2");
+    expect(body.linkStyle).toBe("wide");
+  });
+
+  it("rejects invalid values with 400 and keeps the stored value", async () => {
+    await putSettings(app, env, cookie, { linkStyle: "compact" });
+    for (const linkStyle of ["grid", "Classic", "wide ", "", null, 1, true]) {
+      const res = await putSettings(app, env, cookie, { linkStyle });
+      expect(res.status).toBe(400);
+      expect(await readJson(res)).toEqual({
+        error: "linkStyle must be 'classic', 'compact' or 'wide'",
+      });
+    }
+    expect(storedSetting(env, "link_style")).toBe("compact");
+  });
+
+  it("rejects the whole write when linkStyle is invalid (no partial update)", async () => {
+    const res = await putSettings(app, env, cookie, {
+      siteTitle: "nav2",
+      linkStyle: "grid",
+    });
+    expect(res.status).toBe(400);
+    expect(storedSetting(env, "site_title")).toBeNull();
+    expect(storedSetting(env, "link_style")).toBeNull();
+  });
+
+  it("normalizes a dirty stored value to classic (admin + public DTO)", async () => {
+    (env.DB as unknown as SqliteD1).db
+      .prepare("INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)")
+      .run("link_style", "grid", "2026-11-06T00:00:00.000Z");
+
+    const admin = await readJson(await getSettings(app, env, cookie));
+    expect(admin.linkStyle).toBe("classic");
+
+    const pub = await readJson(await app.request("/api/public", {}, env));
+    expect(pub.settings.linkStyle).toBe("classic");
+
+    // The dirty row itself is left untouched (no migration, no rewrite).
+    expect(storedSetting(env, "link_style")).toBe("grid");
+  });
+
+  it("lists link_style in the settings whitelist", async () => {
+    const res = await app.request(
+      "/api/admin/settings/keys",
+      { headers: { cookie } },
+      env,
+    );
+    expect((await readJson(res)).keys).toContain("link_style");
+  });
+});
+
+/**
  * 站点主题已删除（2026-11-05 定版）：`theme` 不再是站点设置 —— 前后台/公开端点
  * 的 settings DTO 都不含它，写入白名单也不再接受它；存量的 `theme` 行不删不迁移
  * （停止读写后即无害残留）。

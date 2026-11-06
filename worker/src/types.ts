@@ -201,6 +201,8 @@ export interface SiteSettingsDto {
   columns: number;
   /** Open search results in a new tab (settings key `search_new_tab`); defaults to `true`. */
   searchNewTab: boolean;
+  /** 链接样式（settings key `link_style`）：缺省 `classic`，脏值同样归一。 */
+  linkStyle: LinkStyle;
 }
 
 export interface SiteDataDto {
@@ -286,6 +288,17 @@ export function getTablePrefix(env: Env): string {
 
 export const VALID_VISIBILITY = ["public", "private"] as const;
 export type Visibility = (typeof VALID_VISIBILITY)[number];
+
+/** settings key `link_style` 的合法值；缺省与脏值一律按 `classic`。 */
+export const LINK_STYLES = ["classic", "compact", "wide"] as const;
+export type LinkStyle = (typeof LINK_STYLES)[number];
+
+export function isLinkStyle(value: unknown): value is LinkStyle {
+  return (
+    typeof value === "string" &&
+    (LINK_STYLES as readonly string[]).includes(value)
+  );
+}
 
 export function isVisibility(value: unknown): value is Visibility {
   return (

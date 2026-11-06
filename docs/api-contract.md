@@ -94,7 +94,8 @@
     "wallpaperSource": "bing",
     "logoUrl": "",
     "columns": 0,
-    "searchNewTab": true
+    "searchNewTab": true,
+    "linkStyle": "classic"
   }
 }
 ```
@@ -102,6 +103,8 @@
 `scenes`：按 `sortOrder, createdAt` 排序。`/api/public` **只含 `visibility = 'public'` 的场景**（私有场景整个空间对外不存在：场景、其下分类与链接都不出现）；`/api/private` 返回全量场景。两者都包含「只有私有分类的公开场景」。分类的 `sceneId` 为该分类所属场景，`NULL`/悬空 id 会归一化为默认场景 id。
 
 `wallpaperSource`：首页壁纸来源，`bing`（默认，Bing 每日壁纸）| `custom`（用 `backgroundUrl` 自定义图）。存量库无此键时按 `bing` 返回。
+
+`linkStyle`：首页链接样式，`classic`（默认）| `compact` | `wide`。存量库无此键（或存量值不在枚举内）时按 `classic` 返回。
 
 ### GET /api/wallpaper/today
 
@@ -208,14 +211,16 @@ Passkey（WebAuthn，/api/auth/passkey/*，@simplewebauthn/server v14）：
 
 ### 站点设置
 
-- `GET /api/admin/settings` → `{siteTitle, backgroundUrl, wallpaperSource, logoUrl, columns, searchNewTab}`
-- `PUT /api/admin/settings` body 可含 `{siteTitle, backgroundUrl, wallpaperSource(bing|custom), logoUrl, columns(0–12), searchNewTab(boolean)}` → 更新后对象
+- `GET /api/admin/settings` → `{siteTitle, backgroundUrl, wallpaperSource, logoUrl, columns, searchNewTab, linkStyle}`
+- `PUT /api/admin/settings` body 可含 `{siteTitle, backgroundUrl, wallpaperSource(bing|custom), logoUrl, columns(0–12), searchNewTab(boolean), linkStyle(classic|compact|wide)}` → 更新后对象
 
 主题（设深色/浅色）**不在**站点设置里：深浅色只由访客本机偏好（顶栏主题按钮，`localStorage` 键 `nav.visitor-theme`）决定，没有偏好时跟随系统外观。`PUT` 传 `theme` 不生效（白名单外的键一律忽略）；存量的 `settings.theme` 行不删不迁移，只是停产不用。
 
 `searchNewTab`：搜索是否在新标签页打开。存储键 `search_new_tab`，值 `"1"`/`"0"`（同 `totp_enabled` 的 KV 布尔惯例）；库中**无此键**（存量库）时按 `true` 返回。写入只接受布尔值，非布尔返回 400 `searchNewTab must be a boolean`。
 
 `wallpaperSource`：首页壁纸来源。存储键 `wallpaper_source`，值 `"bing"`/`"custom"`；库中**无此键**（存量库）时按 `bing` 返回。写入只接受 `bing`/`custom`，其他值返回 400 `wallpaperSource must be 'bing' or 'custom'`。
+
+`linkStyle`：首页链接样式。存储键 `link_style`，值 `"classic"`/`"compact"`/`"wide"`；库中**无此键**（存量库）时按 `classic` 返回，存量脏值同样归一为 `classic`（不改写库行）。写入只接受这三个字符串值（非字符串一律拒绝），其他值返回 400 `linkStyle must be 'classic', 'compact' or 'wide'`，且一次被拒的请求不会写入同包的任何设置键。
 
 `columns` 允许 `0–12`，其中 `0` 表示**未配置**（用默认值）：`0` 原样存入并原样返回，不会被替换成默认列数。`GET /api/admin/settings` 对未配置的库返回 `columns: 0`，所以 `0–12` 都能往返提交；超出范围返回 400 `columns must be between 0 and 12`。
 
