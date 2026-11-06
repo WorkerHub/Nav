@@ -1,13 +1,12 @@
 import * as React from "react";
-import { LogIn, LogOut, Settings } from "lucide-react";
 import { FadeIn } from "@/components/glass";
 import { CategorySection } from "@/components/link-grid";
 import { LoginDialog } from "@/components/login-dialog";
-import { SceneSwitcher } from "@/components/scene-switcher";
+import { PublicDock } from "@/components/public-dock";
 import { SearchBar } from "@/components/search-bar";
-import { ThemeToggle } from "@/components/theme-toggle";
-import { Button } from "@/components/ui/button";
+import { SiteClock } from "@/components/site-clock";
 import { WallpaperBackground } from "@/components/wallpaper-background";
+import { resolveLinkStyle } from "@/lib/link-style";
 import { useAuthenticated, useNavStore } from "@/lib/nav-store";
 import {
   filterByScene,
@@ -16,19 +15,22 @@ import {
 } from "@/lib/scene-preference";
 
 /**
- * 公开页（/）：背景图 + 整条毛玻璃顶栏（站点标题/Logo + 场景胶囊 + 登录态操作）
- * + 毛玻璃搜索框 + 「我的导航」图标网格 + 登录后的私有区。
+ * 公开页（/）：背景图 + 顶部居中时钟块（站点标题/Logo + 时间）+ 毛玻璃搜索框
+ * + 「我的导航」图标网格 + 登录后的私有区。**没有顶栏**（2026-11-06 移除）：
+ * 场景胶囊与登录态操作都在右下角的固定坞里（`PublicDock`）。
  *
- * 场景（与分类正交）：胶囊在顶栏内部居中（标题在左、操作在右），窄屏在栏内横向
- * 滚动、不另起一行；选中值来自本机偏好 `nav.scene`，切换只过滤前端已拿到的数据、
- * 不发请求。胶囊只列当前视角的 `scenes`（未登录只有公开场景、登录全量），
- * 组件内不做可见性判断 —— 两层取与由数据层完成。
+ * 场景（与分类正交）：胶囊在坞的上部、竖向排列，选中值来自本机偏好 `nav.scene`，
+ * 切换只过滤前端已拿到的数据、不发请求。胶囊只列当前视角的 `scenes`（未登录只有
+ * 公开场景、登录全量），组件内不做可见性判断 —— 两层取与由数据层完成。
+ *
+ * 链接呈现形态由站点设置 `linkStyle` 决定（缺省 classic），由数据层解析后传给
+ * 分类区块，公共页与访客都无法在这里改。
  *
  * 安全口径：未登录时私有区完全不渲染 —— privateData 未加载时组件树里没有私有区块，
  * 数据请求也只发 /api/public（未登录不请求 /api/private）。
  *
- * 登录态是 store 里的三态（pending/authenticated/anonymous）：探活未回时登录区不渲染
- * 任何按钮（不闪「登录」），探活通过后由 store 恢复登录并拉取私有区。
+ * 登录态是 store 里的三态（pending/authenticated/anonymous）：探活未回时坞里不渲染
+ * 任何登录态按钮（不闪「登录」），探活通过后由 store 恢复登录并拉取私有区。
  */
 export function PublicPage({ onOpenAdmin }: { onOpenAdmin: () => void }) {
   const {
@@ -69,8 +71,8 @@ export function PublicPage({ onOpenAdmin }: { onOpenAdmin: () => void }) {
   const visibleCategories = activeScene
     ? filterByScene(categories, activeScene)
     : categories;
-  // 只有 1 个场景（仅「通用」）时与现状一致：不显示胶囊
-  const showSceneSwitcher = scenes.length > 1;
+  // 链接呈现形态（站点设置 linkStyle，缺省 classic；后端无该键时同样回落 classic）
+  const linkStyle = resolveLinkStyle(settings);
 
   // 私有标识：/api/private 的分类 DTO 不含 visibility，用「全量里有、公开列表里没有」推导私有分类。
   const publicIds = new Set(publicData?.categories.map((c) => c.id) ?? []);
@@ -83,92 +85,21 @@ export function PublicPage({ onOpenAdmin }: { onOpenAdmin: () => void }) {
       {/* 背景层（与后台共用同一份实现）：全屏背景图 + 阅读性罩层 */}
       <WallpaperBackground settings={settings} />
 
-      {/* 顶栏：整条毛玻璃，左侧站点标题/Logo，中间场景胶囊，右侧后台、退出与主题切换 */}
-      <header className="glass-bar sticky top-0 z-20">
-        <FadeIn className="mx-auto flex h-14 max-w-7xl items-center gap-2 px-4 sm:gap-3 sm:px-8">
-          {/*
-            站点标题放在顶栏（h1 语义）：logoUrl 有值显示适配栏高的 Logo 图，否则显示站点标题文字。
-            文字沿用顶栏 text-foreground 口径（与右侧按钮一致）：浅色档玻璃底近白、深色档近黑，两档对比度都成立。
-          */}
-          <h1 className="flex min-w-0 items-center font-heading text-lg font-semibold text-foreground sm:text-xl">
-            {settings?.logoUrl ? (
-              <img
-                src={settings.logoUrl}
-                alt={settings.siteTitle || "站点 Logo"}
-                className="h-8 w-auto max-w-[200px] object-contain"
-              />
-            ) : (
-              <span className="min-w-0 truncate">
-                {settings?.siteTitle ?? "我的导航"}
-              </span>
-            )}
-          </h1>
-          {/*
-            场景胶囊在顶栏内部居中：占中间剩余空间，左右两组不因此位移。
-            窄屏不换行、在栏内横向滚动（flex-nowrap + overflow-x-auto），
-            标题继续按原布局在左，登录/后台/主题按钮在右。
-          */}
-          {showSceneSwitcher && activeScene && (
-            <div className="flex min-w-0 flex-1 justify-center">
-              <SceneSwitcher
-                scenes={scenes}
-                value={activeScene}
-                onValueChange={setScenePreference}
-                className="no-scrollbar max-w-full flex-nowrap overflow-x-auto"
-                ariaLabel="切换场景"
-              />
-            </div>
-          )}
-          <div className="ml-auto flex shrink-0 items-center gap-2">
-            {/*
-              顶栏按钮统一用前景色：浅色档的玻璃芯片是近白底，白字对比度只有 2.4:1。
-              新增顶栏按钮请沿用 text-foreground（深色档它就是近白，两档都成立）。
-            */}
-            {authStatus === "pending" ? null : authenticated ? (
-              <>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="glass gap-1.5 text-foreground hover:text-foreground"
-                  onClick={onOpenAdmin}
-                >
-                  <Settings className="size-4" aria-hidden="true" />
-                  后台
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="glass gap-1.5 text-foreground hover:text-foreground"
-                  onClick={() => void logout()}
-                >
-                  <LogOut className="size-4" aria-hidden="true" />
-                  退出
-                </Button>
-              </>
-            ) : (
-              // 低调登录入口
-              <Button
-                variant="ghost"
-                size="sm"
-                className="glass gap-1.5 text-foreground hover:text-foreground"
-                onClick={() => setLoginPrompt(true)}
-              >
-                <LogIn className="size-4" aria-hidden="true" />
-                登录
-              </Button>
-            )}
-            {/*
-              访客个人主题偏好：不受登录态影响（探活中/已登录/未登录都显示）。
-              放在这一组的最右：登录/后台按钮出现或消失时，它不会跟着左右跳动。
-            */}
-            <ThemeToggle />
-          </div>
+      {/*
+        正文：时钟块 → 搜索 → 分类区块。
+        底部留白 pb-80（320px）大于右下角坞的最大高度（场景组封顶 128 + 间距 8 +
+        按钮组 92 = 228px）：滚到页面底部时最后一行链接完整露出，不会被固定坞盖住。
+      */}
+      <main className="mx-auto flex max-w-7xl flex-col gap-10 px-4 pb-80 sm:px-8">
+        <FadeIn className="pt-10 sm:pt-16">
+          <SiteClock
+            siteTitle={settings?.siteTitle ?? "我的导航"}
+            logoUrl={settings?.logoUrl}
+          />
         </FadeIn>
-      </header>
 
-      <main className="mx-auto flex max-w-7xl flex-col gap-10 px-4 pb-20 sm:px-8">
-        {/* 搜索区：站点标题已移入顶栏，这里只剩搜索框 */}
-        <FadeIn className="pt-8 sm:pt-16">
+        {/* 搜索区：搜索逻辑（引擎切换、/ 聚焦、#22 的 refer 口径）原样复用 */}
+        <FadeIn>
           {siteData && (
             <SearchBar
               engines={siteData.searchEngines}
@@ -177,18 +108,30 @@ export function PublicPage({ onOpenAdmin }: { onOpenAdmin: () => void }) {
           )}
         </FadeIn>
 
-        {/* 导航区：分类区块；场景胶囊在顶栏，不占用页面区 */}
+        {/* 导航区：分类区块；场景切换在右下角坞里，不占用页面区 */}
         <div className="flex flex-col gap-10">
           {visibleCategories.map((category, i) => (
             <FadeIn key={category.id} delay={Math.min(i * 0.05, 0.3)}>
               <CategorySection
                 category={category}
                 privateZone={privateIds.has(category.id)}
+                linkStyle={linkStyle}
               />
             </FadeIn>
           ))}
         </div>
       </main>
+
+      {/* 右下角固定坞：上部场景胶囊、下部主题与登录态操作 */}
+      <PublicDock
+        scenes={scenes}
+        activeScene={activeScene}
+        onSceneChange={setScenePreference}
+        authStatus={authStatus}
+        onOpenAdmin={onOpenAdmin}
+        onLogin={() => setLoginPrompt(true)}
+        onLogout={() => void logout()}
+      />
 
       <LoginDialog />
     </div>

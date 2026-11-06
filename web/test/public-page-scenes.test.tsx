@@ -98,26 +98,26 @@ beforeEach(() => {
   useScenePreferenceStore.setState({ raw: null });
 });
 
-describe("PublicPage 场景胶囊：顶栏内居中、只列真实场景", () => {
-  it("两个场景：胶囊在顶栏（banner）内部居中，段序只有真实场景且没有「全部」", () => {
+describe("PublicPage 场景胶囊：右下角坞内竖排、只列真实场景", () => {
+  it("两个场景：胶囊在右下角坞（complementary）里，段序只有真实场景且没有「全部」", () => {
     seed();
     render(<PublicPage onOpenAdmin={vi.fn()} />);
 
-    const banner = screen.getByRole("banner");
-    const group = within(banner).getByRole("radiogroup", {
+    // 顶栏已移除：胶囊住在右下角固定坞里，不再占用页面顶部的栏位
+    expect(screen.queryByRole("banner")).toBeNull();
+    const dock = screen.getByRole("complementary", {
+      name: "场景与快捷操作",
+    });
+    const group = within(dock).getByRole("radiogroup", {
       name: "切换场景",
     });
-    const search = screen.getByLabelText("搜索关键词");
 
-    // 位置：胶囊在顶栏内，整体在搜索区之前（不再占用页面区）
-    expect(
-      group.compareDocumentPosition(search) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
-    // 居中：胶囊位于顶栏中间那一格（flex-1 + justify-center）
-    expect(group.parentElement).toHaveClass("flex-1", "justify-center");
-    // 窄屏在栏内横向滚动，不换行
-    expect(group).toHaveClass("flex-nowrap", "overflow-x-auto");
+    // 竖排坞：竖向排列、定宽，场景多时组内纵向滚动
+    expect(group).toHaveClass("flex-col");
+    expect(group).toHaveClass("overflow-y-auto", "w-28", "max-h-32");
     expect(group).not.toHaveClass("flex-wrap");
+    // 坞本身固定贴右下、层级高于内容
+    expect(dock).toHaveClass("fixed", "bottom-4", "z-30");
 
     expect(screen.queryByText("全部")).toBeNull();
     expect(screen.getAllByRole("radio").map((el) => el.textContent)).toEqual([

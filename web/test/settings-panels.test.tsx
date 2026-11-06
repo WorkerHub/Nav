@@ -253,14 +253,66 @@ describe("SettingsPanel：壁纸来源切换（默认 Bing）", () => {
   });
 });
 
+describe("SettingsPanel：链接样式（缺省 classic）", () => {
+  beforeEach(() => {
+    uploadMock.mockReset();
+    updateSettingsMock.mockReset();
+    updateSettingsMock.mockImplementation(async (input) => ({
+      ...baseSettings,
+      ...input,
+    }));
+  });
+
+  it("旧数据 / 旧 mock 没有 linkStyle：控件显示缺省「经典」", () => {
+    render(<SettingsPanel settings={baseSettings} onChanged={vi.fn()} />);
+
+    expect(screen.getByText("链接样式")).toBeInTheDocument();
+    expect(screen.getByText("经典（图标上、名称下）")).toBeInTheDocument();
+  });
+
+  it("当前值是 wide：控件回显「宽卡片」", () => {
+    render(
+      <SettingsPanel
+        settings={{ ...baseSettings, linkStyle: "wide" }}
+        onChanged={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("宽卡片（图标 + 名称与域名）")).toBeInTheDocument();
+  });
+
+  it("改成「紧凑」并保存：提交 linkStyle=compact，其余字段照旧", async () => {
+    const user = userEvent.setup();
+    render(<SettingsPanel settings={baseSettings} onChanged={vi.fn()} />);
+
+    await user.click(screen.getByRole("combobox", { name: "选择链接样式" }));
+    await user.click(
+      screen.getByRole("option", { name: "紧凑（横排单行，无卡片底）" }),
+    );
+
+    await user.click(screen.getByRole("button", { name: "保存设置" }));
+
+    await waitFor(() => expect(updateSettingsMock).toHaveBeenCalledTimes(1));
+    expect(updateSettingsMock.mock.calls[0][0]).toMatchObject({
+      linkStyle: "compact",
+      siteTitle: "我的导航",
+      wallpaperSource: "bing",
+    });
+  });
+});
+
 describe("SettingsPanel：站点主题已删除", () => {
   it("面板里没有主题选项（站点设置不再管深浅色）", () => {
     render(<SettingsPanel settings={baseSettings} onChanged={vi.fn()} />);
 
     expect(screen.queryByText("主题")).toBeNull();
     expect(screen.queryByLabelText("选择主题")).toBeNull();
-    // 仍然只剩壁纸来源一个下拉
-    expect(screen.getAllByRole("combobox")).toHaveLength(1);
+    // 下拉只剩「壁纸来源」与「链接样式」，没有主题
+    expect(
+      screen
+        .getAllByRole("combobox")
+        .map((el) => el.getAttribute("aria-label")),
+    ).toEqual(["选择壁纸来源", "选择链接样式"]);
   });
 
   it("保存请求里不带 theme 字段", async () => {

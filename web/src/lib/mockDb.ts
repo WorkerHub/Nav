@@ -183,6 +183,7 @@ function seed(): MockState {
       logoUrl: "",
       columns: 8,
       searchNewTab: true,
+      linkStyle: "classic",
     },
   };
 }
@@ -191,13 +192,14 @@ function load(): MockState {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
-      // 旧 mock 库没有 searchNewTab / wallpaperSource：按契约默认补齐，避免界面读到 undefined
+      // 旧 mock 库没有 searchNewTab / wallpaperSource / linkStyle：按契约默认补齐，避免界面读到 undefined
       const state = JSON.parse(raw) as Omit<MockState, "settings"> & {
         settings: Partial<SiteSettings> & { theme?: unknown };
       };
       state.settings = {
         searchNewTab: true,
         wallpaperSource: "bing",
+        linkStyle: "classic",
         ...state.settings,
       };
       // 站点主题已删除：旧 mock 库存下的 theme 行不再属于契约，读入时丢掉（不迁移数据）

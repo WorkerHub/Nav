@@ -58,6 +58,13 @@ export interface SearchEngine {
   isDefault: boolean;
 }
 
+/**
+ * 公共页链接呈现样式（站点设置 `linkStyle`，冻结契约 #23，全站统一、访客不可切）：
+ * `classic` 经典（图标上/名称下/域名小字）、`compact` 紧凑横排（单行、无卡片底）、
+ * `wide` 宽卡片（玻璃底、图标左、名称与域名两行）。缺省 `classic`。
+ */
+export type LinkStyle = "classic" | "compact" | "wide";
+
 export interface SiteSettings {
   siteTitle: string;
   backgroundUrl: string;
@@ -69,6 +76,12 @@ export interface SiteSettings {
   columns: number;
   /** 搜索在新标签页打开（后端 KV `search_new_tab`，无此键时为 true） */
   searchNewTab: boolean;
+  /**
+   * 链接样式（后端 KV `link_style`，契约 #23；缺省 classic）。
+   * 声明为可选是有意的：后端该键未落地 / 浏览器里的旧缓存没有它时，读侧统一用
+   * `resolveLinkStyle`（lib/link-style.ts）兜底 classic，与改动前的呈现一致。
+   */
+  linkStyle?: LinkStyle;
 }
 
 export interface SiteData {

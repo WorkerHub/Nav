@@ -45,10 +45,16 @@ import {
   parseBookmarksHtml,
   parseImportJson,
 } from "@/lib/bookmarks";
+import {
+  LINK_STYLE_LABELS,
+  LINK_STYLE_OPTIONS,
+  resolveLinkStyle,
+} from "@/lib/link-style";
 import { useNavStore } from "@/lib/nav-store";
 import type {
   AdminCategory,
   AdminLink,
+  LinkStyle,
   SearchEngine,
   SiteSettings,
 } from "@/lib/types";
@@ -257,6 +263,8 @@ export function SettingsPanel({
     wallpaperSource: settings.wallpaperSource ?? "bing",
     // 旧数据 / 旧 mock 可能没有该字段：契约默认开
     searchNewTab: settings.searchNewTab ?? true,
+    // 后端该键未落地 / 旧缓存时同样缺字段：契约缺省 classic（读侧统一兜底）
+    linkStyle: resolveLinkStyle(settings),
   });
 
   const save = async () => {
@@ -305,6 +313,33 @@ export function SettingsPanel({
           <p className="text-sm text-muted-foreground">
             选「自定义壁纸」时使用下方背景图；选「Bing
             每日壁纸」时忽略背景图地址。
+          </p>
+        </div>
+        <div className="grid gap-2">
+          <Label htmlFor="set-link-style">链接样式</Label>
+          {/*
+            链接呈现形态（冻结契约 #23）：全站统一、访客不可切，保存后公共页刷新即生效。
+            控件沿用上方「壁纸来源」的 Select 范式，不另造单选组。
+          */}
+          <Select
+            value={form.linkStyle}
+            onValueChange={(v) =>
+              setForm({ ...form, linkStyle: v as LinkStyle })
+            }
+          >
+            <SelectTrigger id="set-link-style" aria-label="选择链接样式">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {LINK_STYLE_OPTIONS.map((style) => (
+                <SelectItem key={style} value={style}>
+                  {LINK_STYLE_LABELS[style]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-sm text-muted-foreground">
+            全站统一，访客不可切换；保存后公共页刷新即生效。
           </p>
         </div>
         <AssetUploadField
