@@ -5,6 +5,7 @@ import {
   filterByScene,
   resolveAdminScene,
   resolvePublicScene,
+  sortCategoriesByScene,
   SCENE_PREFERENCE_KEY,
   useScenePreferenceStore,
 } from "@/lib/scene-preference";
@@ -188,5 +189,53 @@ describe("useScenePreferenceStore：本机偏好（nav.scene）", () => {
       }),
     );
     expect(useScenePreferenceStore.getState().raw).toBeNull();
+  });
+});
+
+describe("sortCategoriesByScene：「全部」视图按场景顺序", () => {
+  const sceneList: Scene[] = [
+    scene("s_default", "通用", 0, true),
+    scene("s_work", "工作", 1),
+  ];
+  const categories = [
+    { id: "a", sceneId: "s_default", sortOrder: 0 },
+    { id: "b", sceneId: "s_work", sortOrder: 0 },
+    { id: "c", sceneId: "s_default", sortOrder: 2 },
+    { id: "d", sceneId: "s_work", sortOrder: 1 },
+    // 悬空 sceneId（旧数据）：排在最后
+    { id: "e", sceneId: "s_gone", sortOrder: 3 },
+  ];
+
+  it("先按场景 sortOrder、再按分类 sortOrder；未知场景排最后", () => {
+    expect(
+      sortCategoriesByScene(categories, sceneList).map((c) => c.id),
+    ).toEqual(["a", "c", "b", "d", "e"]);
+  });
+
+  it("同序项保持 DTO 顺序（稳定排序）", () => {
+    const tied = [
+      { id: "x", sceneId: "s_default", sortOrder: 0 },
+      { id: "y", sceneId: "s_default", sortOrder: 0 },
+    ];
+    expect(sortCategoriesByScene(tied, sceneList).map((c) => c.id)).toEqual([
+      "x",
+      "y",
+    ]);
+  });
+
+  it("没有场景（旧后端 / 老缓存）：原样返回，保持现状平铺", () => {
+    expect(sortCategoriesByScene(categories, []).map((c) => c.id)).toEqual([
+      "a",
+      "b",
+      "c",
+      "d",
+      "e",
+    ]);
+  });
+
+  it("不修改入参数组", () => {
+    const input = [...categories];
+    sortCategoriesByScene(input, sceneList);
+    expect(input).toEqual(categories);
   });
 });

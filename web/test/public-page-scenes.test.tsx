@@ -23,14 +23,14 @@ const common: Scene = {
   id: "s_default",
   name: "通用",
   icon: null,
-  sortOrder: 1,
+  sortOrder: 0,
   isDefault: true,
 };
 const work: Scene = {
   id: "s_work",
   name: "工作",
   icon: null,
-  sortOrder: 0,
+  sortOrder: 1,
   isDefault: false,
 };
 
@@ -66,7 +66,7 @@ const reading = category("cat-read", "阅读", "s_default", 2);
 
 function seed(
   categories: SiteCategory[] = [dev, ops, reading],
-  scenes: Scene[] = [work, common],
+  scenes: Scene[] = [common, work],
 ) {
   useNavStore.setState({
     publicData: { categories, scenes, searchEngines: [], settings },
@@ -112,8 +112,8 @@ describe("PublicPage 场景胶囊：段序与位置", () => {
 
     expect(screen.getAllByRole("radio").map((el) => el.textContent)).toEqual([
       "全部",
-      "工作",
       "通用",
+      "工作",
     ]);
   });
 
@@ -156,7 +156,26 @@ describe("PublicPage 场景切换：只做前端过滤", () => {
       "aria-checked",
       "true",
     );
-    expect(categoryHeadings()).toEqual(["开发", "运维", "阅读"]);
+    // 按（场景 sortOrder，分类 sortOrder）排序：通用(0) 的开发/阅读在前，工作(1) 的运维随后
+    expect(categoryHeadings()).toEqual(["开发", "阅读", "运维"]);
+  });
+
+  it("「全部」按场景顺序分组渲染（DTO 里场景内 sortOrder 交错也不乱）", () => {
+    // DTO 顺序故意交错：通用 / 工作 / 通用 / 工作
+    seed([
+      category("cat-a", "开发", "s_default", 0),
+      category("cat-c", "运维", "s_work", 1),
+      category("cat-b", "阅读", "s_default", 2),
+      category("cat-d", "发布", "s_work", 3),
+    ]);
+    render(<PublicPage onOpenAdmin={vi.fn()} />);
+
+    // 场景 sortOrder(通用 0 < 工作 1) 是第一键、分类 sortOrder 是第二键：
+    // 通用两项在前（开发 0、阅读 2），工作两项随后（运维 1、发布 3）
+    expect(categoryHeadings()).toEqual(["开发", "阅读", "运维", "发布"]);
+    // 只排序、不加场景分段标题：仍是同一组分类区块
+    expect(screen.queryByRole("heading", { name: "通用" })).toBeNull();
+    expect(screen.getAllByRole("heading", { level: 2 })).toHaveLength(4);
   });
 
   it("点「工作」只留该场景分类，并写回本机偏好", async () => {
@@ -185,7 +204,7 @@ describe("PublicPage 场景切换：只做前端过滤", () => {
     expect(categoryHeadings()).toEqual(["运维"]);
 
     await user.click(screen.getByRole("radio", { name: "全部" }));
-    expect(categoryHeadings()).toEqual(["开发", "运维", "阅读"]);
+    expect(categoryHeadings()).toEqual(["开发", "阅读", "运维"]);
     expect(localStorage.getItem(SCENE_PREFERENCE_KEY)).toBe(ALL_SCENES);
   });
 
@@ -211,7 +230,7 @@ describe("PublicPage 场景切换：只做前端过滤", () => {
       "aria-checked",
       "true",
     );
-    expect(categoryHeadings()).toEqual(["开发", "运维", "阅读"]);
+    expect(categoryHeadings()).toEqual(["开发", "阅读", "运维"]);
     expect(localStorage.getItem(SCENE_PREFERENCE_KEY)).toBe("s_gone");
   });
 
@@ -221,7 +240,7 @@ describe("PublicPage 场景切换：只做前端过滤", () => {
       // 公开区：开发 + 运维；私密阅读与私有运维只在登录后的全量数据里
       publicData: {
         categories: [dev, ops],
-        scenes: [work, common],
+        scenes: [common, work],
         searchEngines: [],
         settings,
       },
@@ -232,7 +251,7 @@ describe("PublicPage 场景切换：只做前端过滤", () => {
           category("cat-priv", "私密阅读", "s_default", 2),
           privateOps,
         ],
-        scenes: [work, common],
+        scenes: [common, work],
         searchEngines: [],
         settings,
       },
@@ -249,10 +268,11 @@ describe("PublicPage 场景切换：只做前端过滤", () => {
     expect(screen.getAllByText("私有")).toHaveLength(1);
 
     await user.click(screen.getByRole("radio", { name: "全部" }));
+    // 通用(0)：开发、私密阅读；工作(1)：运维、私有运维
     expect(categoryHeadings()).toEqual([
       "开发",
-      "运维",
       "私密阅读",
+      "运维",
       "私有运维",
     ]);
     expect(screen.getAllByText("私有")).toHaveLength(2);

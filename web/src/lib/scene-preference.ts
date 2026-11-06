@@ -119,3 +119,30 @@ export function filterByScene<T extends { sceneId: string }>(
   if (sceneId === ALL_SCENES) return [...items];
   return items.filter((item) => item.sceneId === sceneId);
 }
+
+/**
+ * 「全部」视图的本地显示顺序：先按所属场景的顺序（`scenes[]` 的 `sortOrder`），
+ * 再按分类自身的 `sortOrder`。
+ *
+ * 为什么需要：分类的 `sort_order` 是**场景内**序号，服务端全量列表仍按
+ * `sort_order, created_at` 排，直接渲染会出现 A0/B0/A1/B1 交错（契约的「保持 DTO
+ * 顺序」只对单一场景成立）。按场景分组排序后，默认场景（`sort_order` 最小）的现有
+ * 分类保持原顺序在前，新场景依次追加；只排序、**不加场景分段标题**（仍是「现状平铺」）。
+ *
+ * 未知场景（旧数据 / 悬空 id）排在最后；排序稳定，同序项保持 DTO 顺序。
+ * 没有场景（旧后端 / 老缓存）时原样返回，保持「按现状平铺」。
+ */
+export function sortCategoriesByScene<
+  T extends { sceneId: string; sortOrder: number },
+>(items: readonly T[], scenes: readonly Scene[]): T[] {
+  if (scenes.length === 0) return [...items];
+  const sceneSortOrder = new Map(
+    scenes.map((scene) => [scene.id, scene.sortOrder]),
+  );
+  return [...items].sort((a, b) => {
+    const aScene = sceneSortOrder.get(a.sceneId) ?? Number.POSITIVE_INFINITY;
+    const bScene = sceneSortOrder.get(b.sceneId) ?? Number.POSITIVE_INFINITY;
+    if (aScene !== bScene) return aScene - bScene;
+    return a.sortOrder - b.sortOrder;
+  });
+}

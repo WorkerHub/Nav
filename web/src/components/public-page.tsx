@@ -10,8 +10,10 @@ import { Button } from "@/components/ui/button";
 import { WallpaperBackground } from "@/components/wallpaper-background";
 import { useAuthenticated, useNavStore } from "@/lib/nav-store";
 import {
+  ALL_SCENES,
   filterByScene,
   resolvePublicScene,
+  sortCategoriesByScene,
   useScenePreferenceStore,
 } from "@/lib/scene-preference";
 
@@ -61,7 +63,13 @@ export function PublicPage({ onOpenAdmin }: { onOpenAdmin: () => void }) {
   // 旧后端 / 浏览器旧缓存没有 scenes：按「无场景概念」平铺展示，不渲染胶囊
   const scenes = siteData?.scenes ?? [];
   const activeScene = resolvePublicScene(scenePreference, scenes);
-  const visibleCategories = filterByScene(categories, activeScene);
+  const filteredCategories = filterByScene(categories, activeScene);
+  // 「全部」视图按（场景 sortOrder，分类 sortOrder）本地排序：分类的 sort_order 是
+  // 场景内序号，直接混排会 A0/B0/A1/B1 交错；只排序、不加场景分段标题（仍是现状平铺）。
+  const visibleCategories =
+    activeScene === ALL_SCENES
+      ? sortCategoriesByScene(filteredCategories, scenes)
+      : filteredCategories;
   // 只有 1 个场景（仅「通用」）时与现状一致：不显示胶囊
   const showSceneSwitcher = scenes.length > 1;
 
