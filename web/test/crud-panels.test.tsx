@@ -765,6 +765,37 @@ describe("LinkPanel：编辑链接可改所属分类", () => {
     );
   });
 
+  it("排序请求还在飞时改分类保存：先等排序落库再发 PUT（保证 move 是最后一次写）", async () => {
+    const user = userEvent.setup();
+    const reorderPending = deferred();
+    reorderLinksMock.mockReturnValue(reorderPending.promise);
+
+    render(
+      <LinkHarness onChanged={() => void useNavStore.getState().loadAdmin()} />,
+    );
+
+    // 拖一次排序：请求在飞（复现「排序未落库就改分类」的交错）
+    await user.click(screen.getByRole("button", { name: "下移 GitHub" }));
+    expect(reorderLinksMock).toHaveBeenCalledTimes(1);
+
+    await openRow(user, "MDN");
+    await user.click(screen.getByRole("combobox", { name: "选择所属分类" }));
+    await user.click(screen.getByRole("option", { name: "阅读" }));
+    await user.click(screen.getByRole("button", { name: "保存" }));
+
+    await new Promise((r) => setTimeout(r, 0));
+    // 排序未落库前不得发 PUT：否则 /links/reorder 可能在 PUT 之后落库，
+    // 把这个链接改回旧槽位（目标分类末尾就不成立了）
+    expect(updateLinkMock).not.toHaveBeenCalled();
+
+    reorderPending.resolve();
+    await waitFor(() => expect(updateLinkMock).toHaveBeenCalledTimes(1));
+    expect(updateLinkMock).toHaveBeenCalledWith(
+      "l3",
+      expect.objectContaining({ categoryId: "c2" }),
+    );
+  });
+
   it("改分类保存后：链接落到目标分类末尾，原分类里消失（不被本地旧槽位改写）", async () => {
     const user = userEvent.setup();
     // 四个链接：开发 = GitHub/MDN，阅读 = 少数派/V2EX
@@ -802,7 +833,7 @@ describe("LinkPanel：编辑链接可改所属分类", () => {
       ]),
     );
 
-    // 服务端视角：MDN(l3) 改宐「阅读」，落全局 MAX+1 = 4（不是旧槽位的 2）
+    // 服务端视角：MDN(l3) 搬到「阅读」，落全局 MAX+1 = 4（不是旧槽位的 2）
     const serverLinks = [
       { ...four[1], sortOrder: 0 },
       { ...four[0], sortOrder: 1 },

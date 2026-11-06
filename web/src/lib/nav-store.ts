@@ -90,11 +90,18 @@ interface NavState {
   reorderEngines: (ids: string[]) => Promise<void>;
   reorderScenes: (ids: string[]) => Promise<void>;
   /**
-   * 链接换了分类：服务端把它的全局 sort_order 重排到「目标分类末尾」，
-   * 本地拖拽顺序簿记（localIds/beforeIds）只描述旧归属下的位置，必须作废；
-   * 否则随后的 loadAdmin 投影会按旧槽位重写它的 sortOrder，得等整页加载才显示新位置。
+   * 链接换分类前调用：先等在飞的链接排序（/links/reorder）全部落库，再作废本地
+   * 顺序簿记（localIds/pendingIds/beforeIds）。
+   *
+   * 「全部落库」包括在飞期间又拖出的顺序：发送循环会先把 pendingIds 里最新的一轮发完
+   * 才结束，所以 await 返回时旧顺序既不会再有请求待发，也不会在事后写回本地。
+   *
+   * 为什么必须「等」而不是就地清掉：排序请求无法取消，若它在这次 PUT 之后才落库，
+   * 会把这个链接的 sort_order 改回旧槽位；而它的成功回调还会把旧顺序写回 localIds，
+   * 让随后的 loadAdmin 投影继续按旧槽位覆盖新位置——等到它落地再作废，才保证这次
+   * PUT（全局 MAX+1）是链接顺序相关写入的最后一次。
    */
-  forgetLinkOrder: () => void;
+  settleLinkOrder: () => Promise<void>;
   /** 设置保存成功后就地刷新 store 里所有存活的 settings 切片（三片原子更新） */
   patchAdminSettings: (settings: SiteSettings) => void;
   loadPrivate: () => Promise<void>;
@@ -253,11 +260,14 @@ export const useNavStore = create<NavState>((set, get) => ({
     reorderList("searchEngines", ids, adminReorderEngines),
   reorderScenes: (ids) => reorderList("scenes", ids, adminReorderScenes),
 
-  forgetLinkOrder: () => {
+  settleLinkOrder: async () => {
     const track = reorderTracks.links;
+    // 在飞的排序失败时 flushReorder 已自行回滚 + 回拉，并由原调用者 toast；
+    // 这里不能让它的失败挡住换分类的保存。
+    if (track.inFlight) await track.inFlight.catch(() => {});
     track.localIds = null;
+    track.pendingIds = null;
     track.beforeIds = null;
-    // pendingIds 不动：在飞的排序是用户真实拖拽，丢掉它会让那次操作静默失效。
   },
 
   defaultEngine: () => {
@@ -293,10 +303,11 @@ export function useAuthenticated(): boolean {
 // 与乐观写入本质竞态——排序前发出的 GET 若晚到，会把更晚的乐观顺序盖回旧值。
 // 全量刷新只在初始加载与增删改/导入/设置保存后发生，那几次由 projectLocalOrder
 // 把本地顺序投影到服务端数据上，所以旧响应同样盖不掉顺序。
-// 因此这里不需要版本号/序号/时间戳对账，只需要三件事：
+// 因此这里不需要版本号/序号/时间戳对账，只需要四件事：
 //   localIds    本地权威顺序（投影 + 本轮之后仍以它为准）
 //   pendingIds  在飞期间又拖出的最新顺序（串行发送，只补发最新一次）
 //   beforeIds   本轮排序开始前的显示顺序（终止失败时的即时回滚目标）
+//   inFlight    在飞循环的 Promise（给「必须排在排序写入之后」的操作 await）
 
 type AdminListKey = "scenes" | "categories" | "links" | "searchEngines";
 
@@ -310,22 +321,41 @@ interface ReorderTrack {
   beforeIds: string[] | null;
   /** 是否已有发送循环在跑（保证同一实体同一时刻只有一个请求在飞）。 */
   running: boolean;
+  /**
+   * 在飞发送循环的 Promise（没有则为 null）：给需要「排在排序写入之后」的操作
+   * （如链接换分类）提供一个可 await 的落地点。
+   */
+  inFlight: Promise<void> | null;
 }
 
 const reorderTracks: Record<AdminListKey, ReorderTrack> = {
-  scenes: { localIds: null, pendingIds: null, beforeIds: null, running: false },
+  scenes: {
+    localIds: null,
+    pendingIds: null,
+    beforeIds: null,
+    running: false,
+    inFlight: null,
+  },
   categories: {
     localIds: null,
     pendingIds: null,
     beforeIds: null,
     running: false,
+    inFlight: null,
   },
-  links: { localIds: null, pendingIds: null, beforeIds: null, running: false },
+  links: {
+    localIds: null,
+    pendingIds: null,
+    beforeIds: null,
+    running: false,
+    inFlight: null,
+  },
   searchEngines: {
     localIds: null,
     pendingIds: null,
     beforeIds: null,
     running: false,
+    inFlight: null,
   },
 };
 
@@ -347,6 +377,8 @@ export function resetAdminOrderState(): void {
     reorderTracks[key].pendingIds = null;
     reorderTracks[key].beforeIds = null;
     reorderTracks[key].running = false;
+    // 旧会话的循环不会清它（stale 后直接退出），这里一并置空
+    reorderTracks[key].inFlight = null;
   }
 }
 
@@ -507,7 +539,11 @@ function reorderList(
     ),
   });
   if (track.running) return Promise.resolve();
-  return flushReorder(key, send);
+  const run = flushReorder(key, send);
+  // flushReorder 同步设 running；若它没开循环就收尾了（无可发顺序），running
+  // 已是 false，这里不登记（否则会留一个已结束的 inFlight 永远不清）。
+  if (track.running) track.inFlight = run;
+  return run;
 }
 
 /**
@@ -570,7 +606,10 @@ async function flushReorder(
     }
   } finally {
     // 旧循环不得清掉新会话正在跑的循环的 running（否则会并发开出第二条循环）
-    if (!stale()) track.running = false;
+    if (!stale()) {
+      track.running = false;
+      track.inFlight = null;
+    }
   }
   if (!error) {
     track.beforeIds = null; // 本轮全部落库，下次排序重新取快照

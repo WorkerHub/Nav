@@ -341,19 +341,18 @@ export function LinkPanel({
     };
     try {
       if (editingId) {
-        await adminUpdateLink(editingId, payload);
         if (moved) {
-          // 本地拖拽顺序簿记描述的是旧分类归属下的位置，换分类后作废，
-          // 让随后的 onChanged → loadAdmin 按服务端的新 sortOrder 排。
-          useNavStore.getState().forgetLinkOrder();
-          toast.success(
-            targetCategory
-              ? `链接已移到「${targetCategory.name}」末尾`
-              : "链接已更新",
-          );
-        } else {
-          toast.success("链接已更新");
+          // 换分类要把「最后一次写」留给这次 PUT：先等在飞的 /links/reorder 落库，
+          // 同时作废本地顺序簿记（旧顺序若在 PUT 之后落库，会把这个链接改回旧槽位，
+          // 成功后还会把旧顺序写回本地、让界面继续按旧槽位排）。
+          await useNavStore.getState().settleLinkOrder();
         }
+        await adminUpdateLink(editingId, payload);
+        toast.success(
+          moved && targetCategory
+            ? `链接已移到「${targetCategory.name}」末尾`
+            : "链接已更新",
+        );
       } else {
         await adminCreateLink(payload);
         toast.success("链接已创建");
