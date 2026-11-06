@@ -269,6 +269,7 @@ export function LinkPanel({
   const [editingId, setEditingId] = React.useState<string | null>(null);
   const [creating, setCreating] = React.useState(false);
   const [form, setForm] = React.useState({
+    categoryId: "",
     title: "",
     url: "",
     iconUrl: "",
@@ -283,6 +284,7 @@ export function LinkPanel({
       return;
     }
     setForm({
+      categoryId: category.id,
       title: "",
       url: "",
       iconUrl: "",
@@ -294,9 +296,12 @@ export function LinkPanel({
   };
 
   const openEdit = (id: string) => {
+    // 「所有」视图下 categoryLinks 就是当前场景的全部链接，因此编辑照样可用，
+    // 且预选值取链接实际所属的分类（不是筛选器当前选中的分类）。
     const l = categoryLinks.find((x) => x.id === id);
     if (!l) return;
     setForm({
+      categoryId: l.categoryId,
       title: l.title,
       url: l.url,
       iconUrl: l.iconUrl ?? "",
@@ -314,8 +319,20 @@ export function LinkPanel({
   };
 
   const save = async () => {
+    // 所属分类是必填项（「所有」视图下 openCreate 已拦一次，这里再兜一道）
+    if (!form.categoryId) {
+      toast.error("请先选择一个分类");
+      return;
+    }
     const previousIcon = links.find((l) => l.id === editingId)?.iconUrl ?? null;
+    // 分类变了 = 把链接搬到目标分类末尾（服务端在 categoryId 变更且未给 sortOrder
+    // 时置全局 MAX+1，沿 #17 分类搬家口径）；未变时服务端不扰动顺序。
+    const moved =
+      !!editingId &&
+      links.find((l) => l.id === editingId)?.categoryId !== form.categoryId;
+    const targetCategory = categories.find((c) => c.id === form.categoryId);
     const payload = {
+      categoryId: form.categoryId,
       title: form.title,
       url: form.url,
       iconUrl: form.iconUrl || null,
@@ -325,10 +342,20 @@ export function LinkPanel({
     try {
       if (editingId) {
         await adminUpdateLink(editingId, payload);
-        toast.success("链接已更新");
+        if (moved) {
+          // 本地拖拽顺序簿记描述的是旧分类归属下的位置，换分类后作废，
+          // 让随后的 onChanged → loadAdmin 按服务端的新 sortOrder 排。
+          useNavStore.getState().forgetLinkOrder();
+          toast.success(
+            targetCategory
+              ? `链接已移到「${targetCategory.name}」末尾`
+              : "链接已更新",
+          );
+        } else {
+          toast.success("链接已更新");
+        }
       } else {
-        if (!category) return;
-        await adminCreateLink({ ...payload, categoryId: category.id });
+        await adminCreateLink(payload);
         toast.success("链接已创建");
       }
     } catch (error) {
@@ -441,6 +468,29 @@ export function LinkPanel({
             <DialogTitle>{editingId ? "编辑链接" : "新建链接"}</DialogTitle>
           </DialogHeader>
           <div className="grid gap-4">
+            <div className="grid gap-2">
+              <Label htmlFor="link-category">所属分类</Label>
+              {/* 只列当前场景的分类（跨场景搬分类不做）；编辑时预选链接实际分类 */}
+              <Select
+                value={form.categoryId}
+                onValueChange={(v) => setForm({ ...form, categoryId: v })}
+              >
+                <SelectTrigger
+                  id="link-category"
+                  aria-label="选择所属分类"
+                  className="w-full"
+                >
+                  <SelectValue placeholder="选择分类" />
+                </SelectTrigger>
+                <SelectContent>
+                  {categories.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <div className="grid gap-2">
               <Label htmlFor="link-title">标题</Label>
               <Input

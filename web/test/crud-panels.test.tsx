@@ -338,6 +338,7 @@ describe("LinkPanel：链接图标上传 / 回填 / 清旧", () => {
 
     await waitFor(() =>
       expect(updateLinkMock).toHaveBeenCalledWith("l1", {
+        categoryId: "c1",
         title: "GitHub",
         url: "https://github.com",
         iconUrl: "/assets/assets/icon/link-new.png",
@@ -622,6 +623,216 @@ describe("LinkPanel：分类筛选「所有」", () => {
     await user.click(screen.getByRole("button", { name: "新建链接" }));
     expect(toastErrorMock).toHaveBeenCalledWith("请先选择一个分类");
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+});
+
+describe("LinkPanel：编辑链接可改所属分类", () => {
+  const reading: AdminCategory = {
+    ...category,
+    id: "c2",
+    name: "阅读",
+    sortOrder: 1,
+  };
+  const sspai: AdminLink = {
+    ...link,
+    id: "l2",
+    categoryId: "c2",
+    title: "少数派",
+    url: "https://sspai.com",
+    sortOrder: 1,
+  };
+
+  it("编辑弹窗只列当前场景的分类，并预选链接实际所属分类", async () => {
+    const user = userEvent.setup();
+    render(
+      <LinkPanel
+        categories={[category, reading]}
+        links={[link, sspai]}
+        onChanged={vi.fn()}
+      />,
+    );
+
+    await openRow(user, "GitHub");
+    expect(
+      screen.getByRole("combobox", { name: "选择所属分类" }),
+    ).toHaveTextContent("开发");
+
+    await user.click(screen.getByRole("combobox", { name: "选择所属分类" }));
+    expect(screen.getAllByRole("option").map((el) => el.textContent)).toEqual([
+      "开发",
+      "阅读",
+    ]);
+  });
+
+  it("「所有」筛选下编辑同样可用，预选值是链接实际所属分类", async () => {
+    const user = userEvent.setup();
+    render(
+      <LinkPanel
+        categories={[category, reading]}
+        links={[link, sspai]}
+        onChanged={vi.fn()}
+      />,
+    );
+
+    // 筛选器停在「所有」，但预选跟链接走：少数派属于阅读
+    expect(
+      screen.getByRole("combobox", { name: "选择分类" }),
+    ).toHaveTextContent("所有");
+    await openRow(user, "少数派");
+    expect(
+      screen.getByRole("combobox", { name: "选择所属分类" }),
+    ).toHaveTextContent("阅读");
+  });
+
+  it("改分类保存：payload 带新 categoryId，并提示已移到目标分类末尾", async () => {
+    const user = userEvent.setup();
+    render(
+      <LinkPanel
+        categories={[category, reading]}
+        links={[link, sspai]}
+        onChanged={vi.fn()}
+      />,
+    );
+
+    await openRow(user, "GitHub");
+    await user.click(screen.getByRole("combobox", { name: "选择所属分类" }));
+    await user.click(screen.getByRole("option", { name: "阅读" }));
+    await user.click(screen.getByRole("button", { name: "保存" }));
+
+    await waitFor(() =>
+      expect(updateLinkMock).toHaveBeenCalledWith("l1", {
+        categoryId: "c2",
+        title: "GitHub",
+        url: "https://github.com",
+        iconUrl: null,
+        description: null,
+        visibility: "public",
+      }),
+    );
+    expect(toastSuccessMock).toHaveBeenCalledWith("链接已移到「阅读」末尾");
+  });
+
+  it("分类未改：照旧带上当前 categoryId，不提示搬家", async () => {
+    const user = userEvent.setup();
+    render(
+      <LinkPanel
+        categories={[category, reading]}
+        links={[link, sspai]}
+        onChanged={vi.fn()}
+      />,
+    );
+
+    await openRow(user, "GitHub");
+    await user.click(screen.getByRole("button", { name: "保存" }));
+
+    await waitFor(() =>
+      expect(updateLinkMock).toHaveBeenCalledWith(
+        "l1",
+        expect.objectContaining({ categoryId: "c1" }),
+      ),
+    );
+    expect(toastSuccessMock).toHaveBeenCalledWith("链接已更新");
+  });
+
+  it("新建链接弹窗也有所属分类下拉：默认当前分类，可改后再创建", async () => {
+    const user = userEvent.setup();
+    createLinkMock.mockResolvedValue({ ...link, id: "l9" });
+    render(
+      <LinkPanel
+        categories={[category, reading]}
+        links={[link, sspai]}
+        onChanged={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole("combobox", { name: "选择分类" }));
+    await user.click(screen.getByRole("option", { name: "开发" }));
+    await user.click(screen.getByRole("button", { name: "新建链接" }));
+    expect(
+      screen.getByRole("combobox", { name: "选择所属分类" }),
+    ).toHaveTextContent("开发");
+
+    await user.click(screen.getByRole("combobox", { name: "选择所属分类" }));
+    await user.click(screen.getByRole("option", { name: "阅读" }));
+    await user.type(screen.getByLabelText("标题"), "新链接");
+    await user.type(screen.getByLabelText("URL"), "https://example.com/new");
+    await user.click(screen.getByRole("button", { name: "保存" }));
+
+    await waitFor(() =>
+      expect(createLinkMock).toHaveBeenCalledWith(
+        expect.objectContaining({ categoryId: "c2", title: "新链接" }),
+      ),
+    );
+  });
+
+  it("改分类保存后：链接落到目标分类末尾，原分类里消失（不被本地旧槽位改写）", async () => {
+    const user = userEvent.setup();
+    // 四个链接：开发 = GitHub/MDN，阅读 = 少数派/V2EX
+    const four: AdminLink[] = [
+      link,
+      sspai,
+      { ...link, id: "l3", categoryId: "c1", title: "MDN", sortOrder: 2 },
+      {
+        ...link,
+        id: "l4",
+        categoryId: "c2",
+        title: "V2EX",
+        url: "https://v2ex.com",
+        sortOrder: 3,
+      },
+    ];
+    useNavStore.setState({
+      adminData: { ...adminBase, links: four },
+      authStatus: "authenticated",
+    });
+
+    render(
+      <LinkHarness onChanged={() => void useNavStore.getState().loadAdmin()} />,
+    );
+
+    // 先拖一次排序，让本地链接顺序簿记（localIds）占位：
+    // 排序后全局序号变成 l2=0 / l1=1 / l3=2 / l4=3
+    await user.click(screen.getByRole("button", { name: "下移 GitHub" }));
+    await waitFor(() =>
+      expect(editLabels()).toEqual([
+        "编辑 少数派",
+        "编辑 GitHub",
+        "编辑 MDN",
+        "编辑 V2EX",
+      ]),
+    );
+
+    // 服务端视角：MDN(l3) 改宐「阅读」，落全局 MAX+1 = 4（不是旧槽位的 2）
+    const serverLinks = [
+      { ...four[1], sortOrder: 0 },
+      { ...four[0], sortOrder: 1 },
+      { ...four[3], sortOrder: 3 },
+      { ...four[2], categoryId: "c2", sortOrder: 4 },
+    ];
+    updateLinkMock.mockImplementation(async (id, input) => ({
+      ...(four.find((l) => l.id === id) as AdminLink),
+      ...input,
+    }));
+    listAllMock.mockResolvedValue({ ...adminBase, links: serverLinks });
+
+    // 「所有」视图下直接编辑
+    await openRow(user, "MDN");
+    await user.click(screen.getByRole("combobox", { name: "选择所属分类" }));
+    await user.click(screen.getByRole("option", { name: "阅读" }));
+    await user.click(screen.getByRole("button", { name: "保存" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+    // 目标分类：搬到末尾（V2EX 之后，而不是旧槽位对应的 MDN 前）
+    await user.click(screen.getByRole("combobox", { name: "选择分类" }));
+    await user.click(screen.getByRole("option", { name: "阅读" }));
+    await waitFor(() =>
+      expect(editLabels()).toEqual(["编辑 少数派", "编辑 V2EX", "编辑 MDN"]),
+    );
+
+    // 原分类：已消失
+    await user.click(screen.getByRole("combobox", { name: "选择分类" }));
+    await user.click(screen.getByRole("option", { name: "开发" }));
+    await waitFor(() => expect(editLabels()).toEqual(["编辑 GitHub"]));
   });
 });
 

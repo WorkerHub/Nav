@@ -550,3 +550,43 @@ describe("场景内排序不污染其他场景的 sortOrder", () => {
     ).toEqual(["a1", "a2"]);
   });
 });
+
+describe("链接换分类后作废本地顺序（服务端按目标分类末尾重排）", () => {
+  /** 服务端视角：l1 已从 c1 搬到 c2，落到全局 MAX+1 = 3。 */
+  function serverAfterMove(): AdminData {
+    return {
+      ...makeAdminData(),
+      links: [
+        link("l3", "c1", "MDN", 0),
+        link("l2", "c2", "少数派", 1),
+        link("l4", "c2", "V2EX", 2),
+        link("l1", "c2", "GitHub", 3),
+      ],
+    };
+  }
+
+  it("forgetLinkOrder 之后 loadAdmin 用服务端序号：搬走的链接排到新分类末尾", async () => {
+    // 先拖一次排序，让本地权威顺序（localIds）占位
+    await useNavStore.getState().reorderLinks(["l3", "l1", "l2", "l4"]);
+    listAllMock.mockResolvedValue(serverAfterMove());
+
+    useNavStore.getState().forgetLinkOrder();
+    await useNavStore.getState().loadAdmin();
+
+    expect(adminData().links.find((l) => l.id === "l1")).toMatchObject({
+      categoryId: "c2",
+      sortOrder: 3,
+    });
+    expect(orders(adminData().links)).toEqual([0, 1, 2, 3]);
+  });
+
+  it("对照：不作废时本地旧槽位会把新 sortOrder 改写回去", async () => {
+    await useNavStore.getState().reorderLinks(["l3", "l1", "l2", "l4"]);
+    listAllMock.mockResolvedValue(serverAfterMove());
+
+    await useNavStore.getState().loadAdmin();
+
+    // 旧槽位（localIds 里 l1 排第 2）把服务端的 3 改成了 1 → 会插到新分类中间
+    expect(adminData().links.find((l) => l.id === "l1")?.sortOrder).toBe(1);
+  });
+});

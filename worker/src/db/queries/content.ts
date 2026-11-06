@@ -154,6 +154,25 @@ export async function listLinks(
   return result.results;
 }
 
+/**
+ * Next append-at-the-end sort order for links: MAX(sort_order) + 1 over the
+ * **whole** table (0 when empty). Link `sort_order` is a global sequence, not a
+ * per-category one, so a link that changes category lands after every existing
+ * link — i.e. at the end of its new category. Mirrors the category move rule
+ * (nav #17), which bases the append on the target scene.
+ */
+export async function nextLinkSortOrder(
+  db: D1Database,
+  prefix: string,
+): Promise<number> {
+  const row = await db
+    .prepare(
+      `SELECT COALESCE(MAX(sort_order), -1) + 1 AS next FROM ${prefix}links`,
+    )
+    .first<{ next: number }>();
+  return row?.next ?? 0;
+}
+
 export async function findLink(
   db: D1Database,
   prefix: string,

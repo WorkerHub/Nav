@@ -521,7 +521,19 @@ export const mockDb = {
     const state = load();
     const item = state.links.find((l) => l.id === id);
     if (!item) throw new Error("link not found");
-    Object.assign(item, input, { updatedAt: now() });
+    // 与后端 PUT /api/admin/links/:id 同口径：换分类且未给 sortOrder 时落全局 MAX+1
+    // （链接未变分类则不扰动顺序），供 dev 联调对照真实行为。
+    const moved =
+      input.categoryId !== undefined && input.categoryId !== item.categoryId;
+    const appendAt =
+      state.links.reduce((max, l) => Math.max(max, l.sortOrder), -1) + 1;
+    Object.assign(item, input, {
+      sortOrder:
+        moved && input.sortOrder === undefined
+          ? appendAt
+          : (input.sortOrder ?? item.sortOrder),
+      updatedAt: now(),
+    });
     persist(state);
     return item;
   },

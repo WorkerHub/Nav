@@ -193,6 +193,8 @@ Passkey（WebAuthn，/api/auth/passkey/*，@simplewebauthn/server v14）：
 - `GET /api/admin/links` → `{links:[{id,categoryId,title,url,iconUrl,description,sortOrder,visibility,createdAt,updatedAt}]}`
 - `POST /api/admin/links` body `{title, url, categoryId, iconUrl?, description?, sortOrder?, visibility?}` → 201 `{id}`
 - `PUT /api/admin/links/:id`（部分更新）→ 更新后对象
+  - `categoryId` 不存在 → 400 `{"error":"categoryId does not exist"}`；改 `categoryId` 即把链接搬到目标分类（不另开端点，链接的 `sortOrder` 仍是**全局**序号，不是分类内序号）。
+  - 搬分类时若同时给了 `sortOrder` 则以它为准；未给 `sortOrder` 时落到目标分类末尾（全表 `MAX(sort_order)+1`，与分类跨场景搬家同一口径），不会与现有排序撞号；`categoryId` 传的是原分类（未变）时不动顺序。
 - `DELETE /api/admin/links/:id` → `{success:true}`
 - `POST /api/admin/links/reorder` body `{ids:[…]}` → `{success:true}`
 

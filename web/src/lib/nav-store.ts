@@ -89,6 +89,12 @@ interface NavState {
   reorderLinks: (ids: string[]) => Promise<void>;
   reorderEngines: (ids: string[]) => Promise<void>;
   reorderScenes: (ids: string[]) => Promise<void>;
+  /**
+   * 链接换了分类：服务端把它的全局 sort_order 重排到「目标分类末尾」，
+   * 本地拖拽顺序簿记（localIds/beforeIds）只描述旧归属下的位置，必须作废；
+   * 否则随后的 loadAdmin 投影会按旧槽位重写它的 sortOrder，得等整页加载才显示新位置。
+   */
+  forgetLinkOrder: () => void;
   /** 设置保存成功后就地刷新 store 里所有存活的 settings 切片（三片原子更新） */
   patchAdminSettings: (settings: SiteSettings) => void;
   loadPrivate: () => Promise<void>;
@@ -246,6 +252,13 @@ export const useNavStore = create<NavState>((set, get) => ({
   reorderEngines: (ids) =>
     reorderList("searchEngines", ids, adminReorderEngines),
   reorderScenes: (ids) => reorderList("scenes", ids, adminReorderScenes),
+
+  forgetLinkOrder: () => {
+    const track = reorderTracks.links;
+    track.localIds = null;
+    track.beforeIds = null;
+    // pendingIds 不动：在飞的排序是用户真实拖拽，丢掉它会让那次操作静默失效。
+  },
 
   defaultEngine: () => {
     const engines = get().publicData?.searchEngines ?? [];
