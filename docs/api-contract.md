@@ -20,7 +20,7 @@
 - 分类的 `sort_order` 表示**场景内**排序；链接保持原有全局排序语义不变。
 - 默认场景只认 `is_default = 1`，不按 id 或名字「通用」查找；`is_default` 只读，API 不提供转移默认场景的能力。
 - 搜索引擎不属于任何场景，全场景共用；`visibility` 逻辑完全不变。
-- `/api/public`、`/api/private` 返回**全量**分类与全部场景，服务端不按场景裁剪，场景切换由客户端本地过滤。
+- `/api/public`、`/api/private` 返回全部场景，以及各场景下按既有可见性规则可见的分类；服务端不按场景裁剪，场景切换由客户端本地过滤。
 - DTO 形状：`SceneDto{id,name,icon,sortOrder,isDefault}`；后台场景额外返回 `AdminSceneDto = SceneDto + {createdAt,updatedAt}`；分类 DTO 增加 `sceneId`。
 
 ## 公开
@@ -164,6 +164,7 @@ Passkey（WebAuthn，/api/auth/passkey/*，@simplewebauthn/server v14）：
   - 省略 `sceneId` 时归入默认场景；显式传入但场景不存在 → 400 `{"error":"sceneId does not exist"}`。
 - `PUT /api/admin/categories/:id`（字段同上，部分更新）→ 更新后对象（含 `sceneId`）
   - 改 `sceneId` 即把整个分类移到目标场景（不另开端点）；链接随分类走，不删不改。`sceneId` 不存在 → 400 `{"error":"sceneId does not exist"}`。
+  - 移场景时若同时给了 `sortOrder` 则以它为准；未给 `sortOrder` 时追加到目标场景末尾（目标场景内 `MAX(sort_order)+1`），不会与目标场景现有排序撞号。
 - `DELETE /api/admin/categories/:id` → `{success:true}`（级联删除其链接）
 - `POST /api/admin/categories/reorder` body `{ids:[…]}`（顺序即场景内 sortOrder；客户端只提交当前场景的分类全集，服务端不按场景校验）→ `{success:true}`
 

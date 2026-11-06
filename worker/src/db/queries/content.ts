@@ -247,6 +247,25 @@ export async function deleteLinksByCategory(
     .run();
 }
 
+/**
+ * Next append-at-the-end sort order within one scene: MAX(sort_order) + 1 (0 on
+ * an empty scene). Used when a category moves scenes without an explicit
+ * position, mirroring the delete-scene append rule.
+ */
+export async function nextCategorySortOrder(
+  db: D1Database,
+  prefix: string,
+  sceneId: string,
+): Promise<number> {
+  const row = await db
+    .prepare(
+      `SELECT COALESCE(MAX(sort_order), -1) + 1 AS next FROM ${prefix}categories WHERE scene_id = ?`,
+    )
+    .bind(sceneId)
+    .first<{ next: number }>();
+  return row?.next ?? 0;
+}
+
 // ─── Scenes ──────────────────────────────────────────────────────────────────
 
 export async function listScenes(

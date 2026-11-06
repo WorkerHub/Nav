@@ -797,6 +797,56 @@ describe("admin categories accept sceneId (incl. moving a category)", () => {
     expect(await readJson(bad)).toEqual({ error: "sceneId does not exist" });
   });
 
+  it("moving without sortOrder appends to the target scene; explicit sortOrder wins", async () => {
+    // Target scene already has sort_order 5 → append at 6.
+    insertCategoryRow(env, {
+      id: "work-existing",
+      name: "工作已有",
+      sortOrder: 5,
+      sceneId: workId,
+    });
+    const first = await readJson(
+      await adminRequest(app, env, cookie, "/api/admin/categories", {
+        method: "POST",
+        body: { name: "默认 A", sortOrder: 2 },
+      }),
+    );
+    const moved = await adminRequest(
+      app,
+      env,
+      cookie,
+      `/api/admin/categories/${first.id}`,
+      { method: "PUT", body: { sceneId: workId } },
+    );
+    expect(moved.status).toBe(200);
+    expect(await readJson(moved)).toMatchObject({
+      id: first.id,
+      sceneId: workId,
+      sortOrder: 6,
+    });
+
+    // An explicit position is kept verbatim instead of appended.
+    const second = await readJson(
+      await adminRequest(app, env, cookie, "/api/admin/categories", {
+        method: "POST",
+        body: { name: "默认 B", sortOrder: 1 },
+      }),
+    );
+    const placed = await adminRequest(
+      app,
+      env,
+      cookie,
+      `/api/admin/categories/${second.id}`,
+      { method: "PUT", body: { sceneId: workId, sortOrder: 2 } },
+    );
+    expect(placed.status).toBe(200);
+    expect(await readJson(placed)).toMatchObject({
+      id: second.id,
+      sceneId: workId,
+      sortOrder: 2,
+    });
+  });
+
   it("category reorder only touches the submitted ids (scene-local by client contract)", async () => {
     const a = await readJson(
       await adminRequest(app, env, cookie, "/api/admin/categories", {

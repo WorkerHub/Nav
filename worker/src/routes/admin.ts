@@ -26,6 +26,7 @@ import {
   listLinks,
   listScenes,
   listSearchEngines,
+  nextCategorySortOrder,
   nextSceneSortOrder,
   updateCategory,
   updateLink,
@@ -33,6 +34,7 @@ import {
   updateSearchEngine,
 } from "../db/queries/content";
 import { getAllSettings, setSetting } from "../db/queries/settings";
+import { ensureSchema } from "../lib/migrate";
 import { listRecordedMigrations } from "../lib/migrations-runner";
 import { generateId } from "../core/auth";
 import type { Category, Link, Scene } from "../types";
@@ -95,6 +97,11 @@ function adminCategoryDto(category: Category, scenes: Scene[]) {
 
 adminRoutes.get("/categories", async (c) => {
   const prefix = getTablePrefix(c.env);
+  // Scene-aware handlers need schema_v2. A Worker-only deploy upgrades the
+  // database on the first read path, and the admin SPA can mount before
+  // /api/private finishes — run the same guard here so it never reads `scenes`
+  // before the migration has been applied.
+  await ensureSchema(c.env);
   const [categories, scenes] = await Promise.all([
     listCategories(c.env.DB, prefix),
     listScenes(c.env.DB, prefix),
@@ -106,6 +113,7 @@ adminRoutes.get("/categories", async (c) => {
 
 adminRoutes.post("/categories", async (c) => {
   const prefix = getTablePrefix(c.env);
+  await ensureSchema(c.env);
   const body = await c.req
     .json<{
       name?: unknown;
@@ -173,6 +181,7 @@ adminRoutes.post("/categories", async (c) => {
 
 adminRoutes.put("/categories/:id", async (c) => {
   const prefix = getTablePrefix(c.env);
+  await ensureSchema(c.env);
   const id = c.req.param("id");
   const existing = await findCategory(c.env.DB, prefix, id);
   if (!existing) return c.json({ error: "not found" }, 404);
@@ -201,8 +210,14 @@ adminRoutes.put("/categories/:id", async (c) => {
       ? await findScene(c.env.DB, prefix, requested)
       : null;
     if (!scene) return badRequest("sceneId does not exist");
-    // Moving a category to another scene is a plain scene_id rewrite; links
-    // follow their category, so nothing else has to move.
+    // When a category changes scene and no explicit position was sent, append
+    // it after the target scene's existing categories (MAX+1, the same rule as
+    // deleting a scene) so sort_order cannot collide with target rows. An
+    // explicit sortOrder above wins and is kept verbatim.
+    if (scene.id !== existing.scene_id && body.sortOrder === undefined) {
+      data.sort_order = await nextCategorySortOrder(c.env.DB, prefix, scene.id);
+    }
+    // Links follow their category, so nothing else has to move.
     data.scene_id = scene.id;
   }
 
@@ -233,12 +248,14 @@ adminRoutes.delete("/categories/:id", async (c) => {
 
 adminRoutes.get("/scenes", async (c) => {
   const prefix = getTablePrefix(c.env);
+  await ensureSchema(c.env);
   const scenes = await listScenes(c.env.DB, prefix);
   return c.json({ scenes: scenes.map(toAdminSceneDto) });
 });
 
 adminRoutes.post("/scenes", async (c) => {
   const prefix = getTablePrefix(c.env);
+  await ensureSchema(c.env);
   const body = await c.req.json().catch(() => ({}));
 
   const name = typeof body.name === "string" ? body.name.trim() : "";
@@ -266,6 +283,7 @@ adminRoutes.post("/scenes", async (c) => {
 
 adminRoutes.put("/scenes/:id", async (c) => {
   const prefix = getTablePrefix(c.env);
+  await ensureSchema(c.env);
   const id = c.req.param("id");
   const existing = await findScene(c.env.DB, prefix, id);
   if (!existing) return c.json({ error: "not found" }, 404);
@@ -291,6 +309,7 @@ adminRoutes.put("/scenes/:id", async (c) => {
 
 adminRoutes.delete("/scenes/:id", async (c) => {
   const prefix = getTablePrefix(c.env);
+  await ensureSchema(c.env);
   const id = c.req.param("id");
   const existing = await findScene(c.env.DB, prefix, id);
   if (!existing) return c.json({ error: "not found" }, 404);
@@ -515,6 +534,7 @@ adminRoutes.post("/categories/reorder", async (c) => {
 
 adminRoutes.post("/scenes/reorder", async (c) => {
   const prefix = getTablePrefix(c.env);
+  await ensureSchema(c.env);
   const body = await c.req.json().catch(() => ({}));
   if (!Array.isArray(body.ids))
     return badRequest("ids must be an array of scene ids");
