@@ -1,10 +1,9 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PublicPage } from "@/components/public-page";
 import { useNavStore } from "@/lib/nav-store";
 import {
-  ALL_SCENES,
   SCENE_PREFERENCE_KEY,
   useScenePreferenceStore,
 } from "@/lib/scene-preference";
@@ -25,6 +24,7 @@ const common: Scene = {
   icon: null,
   sortOrder: 0,
   isDefault: true,
+  visibility: "public",
 };
 const work: Scene = {
   id: "s_work",
@@ -32,6 +32,15 @@ const work: Scene = {
   icon: null,
   sortOrder: 1,
   isDefault: false,
+  visibility: "public",
+};
+const secret: Scene = {
+  id: "s_secret",
+  name: "秘密",
+  icon: null,
+  sortOrder: 2,
+  isDefault: false,
+  visibility: "private",
 };
 
 function category(
@@ -89,35 +98,35 @@ beforeEach(() => {
   useScenePreferenceStore.setState({ raw: null });
 });
 
-describe("PublicPage 场景胶囊：段序与位置", () => {
-  it("两个场景：胶囊在搜索区之后、分类区之前，「全部」是第 1 段", () => {
+describe("PublicPage 场景胶囊：顶栏内居中、只列真实场景", () => {
+  it("两个场景：胶囊在顶栏（banner）内部居中，段序只有真实场景且没有「全部」", () => {
     seed();
     render(<PublicPage onOpenAdmin={vi.fn()} />);
 
-    const search = screen.getByLabelText("搜索关键词");
-    const group = screen.getByRole("radiogroup", { name: "切换场景" });
-    const firstHeading = screen.getByRole("heading", {
-      level: 2,
-      name: "开发",
+    const banner = screen.getByRole("banner");
+    const group = within(banner).getByRole("radiogroup", {
+      name: "切换场景",
     });
+    const search = screen.getByLabelText("搜索关键词");
 
-    // 位置：搜索区 → 胶囊 → 导航区
+    // 位置：胶囊在顶栏内，整体在搜索区之前（不再占用页面区）
     expect(
-      search.compareDocumentPosition(group) & Node.DOCUMENT_POSITION_FOLLOWING,
+      group.compareDocumentPosition(search) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
-    expect(
-      group.compareDocumentPosition(firstHeading) &
-        Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
+    // 居中：胶囊位于顶栏中间那一格（flex-1 + justify-center）
+    expect(group.parentElement).toHaveClass("flex-1", "justify-center");
+    // 窄屏在栏内横向滚动，不换行
+    expect(group).toHaveClass("flex-nowrap", "overflow-x-auto");
+    expect(group).not.toHaveClass("flex-wrap");
 
+    expect(screen.queryByText("全部")).toBeNull();
     expect(screen.getAllByRole("radio").map((el) => el.textContent)).toEqual([
-      "全部",
       "通用",
       "工作",
     ]);
   });
 
-  it("只有 1 个场景（仅通用）：与现状一致，不渲染胶囊，分类平铺", () => {
+  it("只有 1 个场景（仅通用）：与现状一致，不渲染胶囊，分类只按该场景显示", () => {
     seed([dev, reading], [common]);
     render(<PublicPage onOpenAdmin={vi.fn()} />);
 
@@ -147,35 +156,16 @@ describe("PublicPage 场景胶囊：段序与位置", () => {
   });
 });
 
-describe("PublicPage 场景切换：只做前端过滤", () => {
-  it("默认「全部」显示所有场景的分类", () => {
+describe("PublicPage 场景切换：默认场景、只做前端过滤", () => {
+  it("没选过偏好：默认场景（通用）选中，只显示该场景分类", () => {
     seed();
     render(<PublicPage onOpenAdmin={vi.fn()} />);
 
-    expect(screen.getByRole("radio", { name: "全部" })).toHaveAttribute(
+    expect(screen.getByRole("radio", { name: "通用" })).toHaveAttribute(
       "aria-checked",
       "true",
     );
-    // 按（场景 sortOrder，分类 sortOrder）排序：通用(0) 的开发/阅读在前，工作(1) 的运维随后
-    expect(categoryHeadings()).toEqual(["开发", "阅读", "运维"]);
-  });
-
-  it("「全部」按场景顺序分组渲染（DTO 里场景内 sortOrder 交错也不乱）", () => {
-    // DTO 顺序故意交错：通用 / 工作 / 通用 / 工作
-    seed([
-      category("cat-a", "开发", "s_default", 0),
-      category("cat-c", "运维", "s_work", 1),
-      category("cat-b", "阅读", "s_default", 2),
-      category("cat-d", "发布", "s_work", 3),
-    ]);
-    render(<PublicPage onOpenAdmin={vi.fn()} />);
-
-    // 场景 sortOrder(通用 0 < 工作 1) 是第一键、分类 sortOrder 是第二键：
-    // 通用两项在前（开发 0、阅读 2），工作两项随后（运维 1、发布 3）
-    expect(categoryHeadings()).toEqual(["开发", "阅读", "运维", "发布"]);
-    // 只排序、不加场景分段标题：仍是同一组分类区块
-    expect(screen.queryByRole("heading", { name: "通用" })).toBeNull();
-    expect(screen.getAllByRole("heading", { level: 2 })).toHaveLength(4);
+    expect(categoryHeadings()).toEqual(["开发", "阅读"]);
   });
 
   it("点「工作」只留该场景分类，并写回本机偏好", async () => {
@@ -195,19 +185,6 @@ describe("PublicPage 场景切换：只做前端过滤", () => {
     expect(loadPublic).not.toHaveBeenCalled();
   });
 
-  it("点「全部」恢复全部并写回 all", async () => {
-    seed();
-    useScenePreferenceStore.setState({ raw: "s_work" });
-    const user = userEvent.setup();
-    render(<PublicPage onOpenAdmin={vi.fn()} />);
-
-    expect(categoryHeadings()).toEqual(["运维"]);
-
-    await user.click(screen.getByRole("radio", { name: "全部" }));
-    expect(categoryHeadings()).toEqual(["开发", "阅读", "运维"]);
-    expect(localStorage.getItem(SCENE_PREFERENCE_KEY)).toBe(ALL_SCENES);
-  });
-
   it("已存偏好：首屏直接按该场景渲染", () => {
     seed();
     useScenePreferenceStore.setState({ raw: "s_work" });
@@ -220,18 +197,81 @@ describe("PublicPage 场景切换：只做前端过滤", () => {
     expect(categoryHeadings()).toEqual(["运维"]);
   });
 
-  it("偏好指向已删除的场景：回落「全部」，且不把回落值写回 localStorage", () => {
+  it("存量偏好是「全部」（all）：回落默认场景，且不把回落值写回 localStorage", () => {
+    localStorage.setItem(SCENE_PREFERENCE_KEY, "all");
+    useScenePreferenceStore.setState({ raw: "all" });
+    seed();
+    render(<PublicPage onOpenAdmin={vi.fn()} />);
+
+    expect(screen.getByRole("radio", { name: "通用" })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    expect(categoryHeadings()).toEqual(["开发", "阅读"]);
+    expect(localStorage.getItem(SCENE_PREFERENCE_KEY)).toBe("all");
+  });
+
+  it("偏好指向已删除的场景：回落默认场景，且不写回偏好", () => {
     localStorage.setItem(SCENE_PREFERENCE_KEY, "s_gone");
     useScenePreferenceStore.setState({ raw: "s_gone" });
     seed();
     render(<PublicPage onOpenAdmin={vi.fn()} />);
 
-    expect(screen.getByRole("radio", { name: "全部" })).toHaveAttribute(
+    expect(screen.getByRole("radio", { name: "通用" })).toHaveAttribute(
       "aria-checked",
       "true",
     );
-    expect(categoryHeadings()).toEqual(["开发", "阅读", "运维"]);
+    expect(categoryHeadings()).toEqual(["开发", "阅读"]);
     expect(localStorage.getItem(SCENE_PREFERENCE_KEY)).toBe("s_gone");
+  });
+
+  it("偏好指向私有场景、未登录时胶囊里没有它：回落到公开的默认场景，页面不空白", () => {
+    // /api/public 只下发公开场景（秘密不在列表里），分类数据同样只含公开场景的分类。
+    useScenePreferenceStore.setState({ raw: "s_secret" });
+    seed([dev, reading], [common, work]);
+    render(<PublicPage onOpenAdmin={vi.fn()} />);
+
+    expect(screen.getByRole("radio", { name: "通用" })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    expect(categoryHeadings()).toEqual(["开发", "阅读"]);
+    expect(screen.queryByText("秘密")).toBeNull();
+  });
+
+  it("登录后胶囊改用全量场景（含私有场景），私有场景的分类按场景显示", () => {
+    const secretCategory = category("cat-secret", "密钥", "s_secret", 3);
+    useNavStore.setState({
+      publicData: {
+        categories: [dev, ops],
+        scenes: [common, work],
+        searchEngines: [],
+        settings,
+      },
+      privateData: {
+        categories: [dev, ops, secretCategory],
+        scenes: [common, work, secret],
+        searchEngines: [],
+        settings,
+      },
+      authStatus: "authenticated",
+      loginPromptOpen: false,
+      loadPublic: vi.fn(async () => {}),
+      loadPrivate: vi.fn(async () => {}),
+    });
+    useScenePreferenceStore.setState({ raw: "s_secret" });
+    render(<PublicPage onOpenAdmin={vi.fn()} />);
+
+    expect(screen.getAllByRole("radio").map((el) => el.textContent)).toEqual([
+      "通用",
+      "工作",
+      "秘密",
+    ]);
+    expect(screen.getByRole("radio", { name: "秘密" })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    expect(categoryHeadings()).toEqual(["密钥"]);
   });
 
   it("登录后的私有分类同样按场景过滤", async () => {
@@ -267,14 +307,9 @@ describe("PublicPage 场景切换：只做前端过滤", () => {
     expect(categoryHeadings()).toEqual(["运维", "私有运维"]);
     expect(screen.getAllByText("私有")).toHaveLength(1);
 
-    await user.click(screen.getByRole("radio", { name: "全部" }));
-    // 通用(0)：开发、私密阅读；工作(1)：运维、私有运维
-    expect(categoryHeadings()).toEqual([
-      "开发",
-      "私密阅读",
-      "运维",
-      "私有运维",
-    ]);
-    expect(screen.getAllByText("私有")).toHaveLength(2);
+    await user.click(screen.getByRole("radio", { name: "通用" }));
+    // 默认场景：开发、私密阅读；工作场景的运维/私有运维不再显示
+    expect(categoryHeadings()).toEqual(["开发", "私密阅读"]);
+    expect(screen.getAllByText("私有")).toHaveLength(1);
   });
 });

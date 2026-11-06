@@ -10,19 +10,19 @@ import { Button } from "@/components/ui/button";
 import { WallpaperBackground } from "@/components/wallpaper-background";
 import { useAuthenticated, useNavStore } from "@/lib/nav-store";
 import {
-  ALL_SCENES,
   filterByScene,
   resolvePublicScene,
-  sortCategoriesByScene,
   useScenePreferenceStore,
 } from "@/lib/scene-preference";
 
 /**
- * 公开页（/）：背景图 + 整条毛玻璃顶栏（站点标题/Logo + 登录态操作）+ 毛玻璃搜索框
- * + 「我的导航」图标网格 + 登录后的私有区。
+ * 公开页（/）：背景图 + 整条毛玻璃顶栏（站点标题/Logo + 场景胶囊 + 登录态操作）
+ * + 毛玻璃搜索框 + 「我的导航」图标网格 + 登录后的私有区。
  *
- * 场景（与分类正交）：搜索区与导航区之间是场景切换胶囊（只有 1 个场景时不渲染），
- * 选中值来自本机偏好 `nav.scene`；切换只过滤前端已拿到的全量数据，不发请求。
+ * 场景（与分类正交）：胶囊在顶栏内部居中（标题在左、操作在右），窄屏在栏内横向
+ * 滚动、不另起一行；选中值来自本机偏好 `nav.scene`，切换只过滤前端已拿到的数据、
+ * 不发请求。胶囊只列当前视角的 `scenes`（未登录只有公开场景、登录全量），
+ * 组件内不做可见性判断 —— 两层取与由数据层完成。
  *
  * 安全口径：未登录时私有区完全不渲染 —— privateData 未加载时组件树里没有私有区块，
  * 数据请求也只发 /api/public（未登录不请求 /api/private）。
@@ -60,16 +60,15 @@ export function PublicPage({ onOpenAdmin }: { onOpenAdmin: () => void }) {
   const siteData = (authenticated && privateData) || publicData;
   const settings = siteData?.settings;
   const categories = siteData?.categories ?? [];
-  // 旧后端 / 浏览器旧缓存没有 scenes：按「无场景概念」平铺展示，不渲染胶囊
+  // 当前视角的场景全集：未登录只有公开场景、登录全量（数据层过滤，组件不再判断）。
+  // 旧后端 / 浏览器旧缓存没有 scenes：按「无场景概念」平铺展示，不渲染胶囊。
   const scenes = siteData?.scenes ?? [];
+  // 偏好命中可用场景就用它，否则回落默认场景；没有场景时 null（不做场景过滤）。
+  // 本机偏好若指向私有场景，未登录时它不在 scenes 里 → 自然落回公开的默认场景。
   const activeScene = resolvePublicScene(scenePreference, scenes);
-  const filteredCategories = filterByScene(categories, activeScene);
-  // 「全部」视图按（场景 sortOrder，分类 sortOrder）本地排序：分类的 sort_order 是
-  // 场景内序号，直接混排会 A0/B0/A1/B1 交错；只排序、不加场景分段标题（仍是现状平铺）。
-  const visibleCategories =
-    activeScene === ALL_SCENES
-      ? sortCategoriesByScene(filteredCategories, scenes)
-      : filteredCategories;
+  const visibleCategories = activeScene
+    ? filterByScene(categories, activeScene)
+    : categories;
   // 只有 1 个场景（仅「通用」）时与现状一致：不显示胶囊
   const showSceneSwitcher = scenes.length > 1;
 
@@ -84,9 +83,9 @@ export function PublicPage({ onOpenAdmin }: { onOpenAdmin: () => void }) {
       {/* 背景层（与后台共用同一份实现）：全屏背景图 + 阅读性罩层 */}
       <WallpaperBackground settings={settings} />
 
-      {/* 顶栏：整条毛玻璃，左侧站点标题/Logo，右侧后台、退出与主题切换 */}
+      {/* 顶栏：整条毛玻璃，左侧站点标题/Logo，中间场景胶囊，右侧后台、退出与主题切换 */}
       <header className="glass-bar sticky top-0 z-20">
-        <FadeIn className="mx-auto flex h-14 max-w-7xl items-center gap-3 px-4 sm:px-8">
+        <FadeIn className="mx-auto flex h-14 max-w-7xl items-center gap-2 px-4 sm:gap-3 sm:px-8">
           {/*
             站点标题放在顶栏（h1 语义）：logoUrl 有值显示适配栏高的 Logo 图，否则显示站点标题文字。
             文字沿用顶栏 text-foreground 口径（与右侧按钮一致）：浅色档玻璃底近白、深色档近黑，两档对比度都成立。
@@ -104,6 +103,22 @@ export function PublicPage({ onOpenAdmin }: { onOpenAdmin: () => void }) {
               </span>
             )}
           </h1>
+          {/*
+            场景胶囊在顶栏内部居中：占中间剩余空间，左右两组不因此位移。
+            窄屏不换行、在栏内横向滚动（flex-nowrap + overflow-x-auto），
+            标题继续按原布局在左，登录/后台/主题按钮在右。
+          */}
+          {showSceneSwitcher && activeScene && (
+            <div className="flex min-w-0 flex-1 justify-center">
+              <SceneSwitcher
+                scenes={scenes}
+                value={activeScene}
+                onValueChange={setScenePreference}
+                className="no-scrollbar max-w-full flex-nowrap overflow-x-auto"
+                ariaLabel="切换场景"
+              />
+            </div>
+          )}
           <div className="ml-auto flex shrink-0 items-center gap-2">
             {/*
               顶栏按钮统一用前景色：浅色档的玻璃芯片是近白底，白字对比度只有 2.4:1。
@@ -162,19 +177,8 @@ export function PublicPage({ onOpenAdmin }: { onOpenAdmin: () => void }) {
           )}
         </FadeIn>
 
-        {/* 导航区：场景胶囊（可选）+ 分类区块；胶囊在搜索区与导航区之间 */}
+        {/* 导航区：分类区块；场景胶囊在顶栏，不占用页面区 */}
         <div className="flex flex-col gap-10">
-          {showSceneSwitcher && (
-            <FadeIn>
-              <SceneSwitcher
-                scenes={scenes}
-                value={activeScene}
-                onValueChange={setScenePreference}
-                includeAll
-                ariaLabel="切换场景"
-              />
-            </FadeIn>
-          )}
           {visibleCategories.map((category, i) => (
             <FadeIn key={category.id} delay={Math.min(i * 0.05, 0.3)}>
               <CategorySection

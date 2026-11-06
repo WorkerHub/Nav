@@ -14,9 +14,10 @@ export type Visibility = "public" | "private";
 // ─── 站点数据（/api/public、/api/private）─────────────────────────────────────
 
 /**
- * 场景（与分类正交的组织维度，冻结契约 #16 §四）：
- * 默认场景 `isDefault === true`，不可删；场景顺序由 `sortOrder` 决定，默认场景不特判。
- * 形状与后台共用（后台 DTO 另带时间戳，见 AdminScene）。
+ * 场景（与分类正交的组织维度，冻结契约 #16 §四、场景可见性契约 #19）：
+ * 默认场景 `isDefault === true`，不可删、不可为私有；场景顺序由 `sortOrder` 决定，默认场景不特判。
+ * `visibility` 是场景层可见性（与分类可见性取与）：未登录时 `/api/public` 只下发公开场景，
+ * 私有场景整个空间对外不存在。形状与后台共用（后台 DTO 另带时间戳，见 AdminScene）。
  */
 export interface Scene {
   id: string;
@@ -24,6 +25,7 @@ export interface Scene {
   icon: string | null;
   sortOrder: number;
   isDefault: boolean;
+  visibility: Visibility;
 }
 
 export interface SiteLink {
@@ -72,9 +74,9 @@ export interface SiteSettings {
 export interface SiteData {
   categories: SiteCategory[];
   /**
-   * 全部场景（默认场景是普通成员，位置由 sortOrder 决定）。
-   * 契约必填；读侧仍按「缺失 = 无场景概念」兜底（旧后端 / 浏览器里的旧缓存），
-   * 见 lib/scene-preference.ts。
+   * 当前视角的场景全集（未登录只有公开场景、登录全量；默认场景是普通成员，
+   * 位置由 sortOrder 决定）。契约必填；读侧仍按「缺失 = 无场景概念」兜底
+   * （旧后端 / 浏览器里的旧缓存），见 lib/scene-preference.ts。
    */
   scenes: Scene[];
   searchEngines: SearchEngine[];

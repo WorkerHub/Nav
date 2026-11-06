@@ -82,6 +82,7 @@ function scene(
     icon: null,
     sortOrder,
     isDefault,
+    visibility: "public",
     createdAt: stamp,
     updatedAt: stamp,
   };

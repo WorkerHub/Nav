@@ -2,6 +2,7 @@ import {
   ArrowDownUp,
   ArrowLeft,
   FolderTree,
+  Info,
   Layers,
   Link as LinkIcon,
   LogOut,
@@ -11,6 +12,7 @@ import {
   Wrench,
 } from "lucide-react";
 import * as React from "react";
+import { AboutPanel } from "@/components/admin/about-panel";
 import { CategoryPanel, LinkPanel } from "@/components/admin/crud-panels";
 import { ScenePanel } from "@/components/admin/scene-panel";
 import { SecurityPanel } from "@/components/admin/security-panel";
@@ -39,8 +41,8 @@ import type { AdminScene } from "@/lib/types";
  * + 玻璃内容卡。分区菜单用 Radix Tabs 单一根：宽屏是左栏竖排，窄屏变内容区顶部的
  * 横向滚动菜单条（同一个 TabsList，只换 orientation 与响应式类，不做抽屉）。
  *
- * 分区内容（分类 / 链接 / 搜索引擎 / 站点设置 / 导入导出 / 安全·两步验证 /
- * 系统管理）的容器换成了玻璃卡，面板组件本身的表单与业务逻辑不动。
+ * 分区内容（分类 / 链接 / 场景管理 / 搜索引擎 / 站点设置 / 导入导出 /
+ * 安全·两步验证 / 系统管理 / 关于）的容器换成了玻璃卡，面板组件本身的表单与业务逻辑不动。
  *
  * 后台数据由 store（useNavStore.adminData）承载，本页只负责加载与分发；
  * 安全区的数据（2FA 状态、Passkey 凭据）属会话期敏感数据，由 SecurityPanel 自行拉取，
@@ -57,6 +59,7 @@ const ADMIN_TABS = [
   { value: "io", label: "导入导出", icon: ArrowDownUp },
   { value: "security", label: "安全 / 两步验证", icon: ShieldCheck },
   { value: "system", label: "系统管理", icon: Wrench },
+  { value: "about", label: "关于", icon: Info },
 ] as const;
 
 /** 与 Tailwind `lg` 断点保持一致：左栏竖排 ↔ 顶部横排菜单条的分界。 */
@@ -137,6 +140,9 @@ export function AdminPage({ onBack }: { onBack: () => void }) {
   const sceneCategories = activeScene
     ? filterByScene(categories, activeScene)
     : categories;
+  // 当前场景的可见性：分类列表据此提示「场景私有，对外不可见」（两层取与）
+  const activeSceneVisibility =
+    scenes.find((scene) => scene.id === activeScene)?.visibility ?? "public";
 
   return (
     <div className="relative min-h-screen">
@@ -235,6 +241,7 @@ export function AdminPage({ onBack }: { onBack: () => void }) {
                     <CategoryPanel
                       categories={sceneCategories}
                       sceneId={activeScene}
+                      sceneVisibility={activeSceneVisibility}
                       onChanged={() => void loadAdmin()}
                     />
                   </div>
@@ -302,6 +309,12 @@ export function AdminPage({ onBack }: { onBack: () => void }) {
               <TabsContent value="system">
                 <PanelCard>
                   <SystemPanel />
+                </PanelCard>
+              </TabsContent>
+
+              <TabsContent value="about">
+                <PanelCard>
+                  <AboutPanel />
                 </PanelCard>
               </TabsContent>
             </div>

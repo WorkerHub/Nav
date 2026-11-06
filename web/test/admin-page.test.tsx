@@ -140,7 +140,7 @@ describe("AdminPage 外壳：玻璃顶栏 + 左栏菜单 + 壁纸背景 + 玻璃
     );
   });
 
-  it("分区菜单是单一 TabsList，八项齐全（含图标）", () => {
+  it("分区菜单是单一 TabsList，九项齐全（含「关于」与图标）", () => {
     seedAdmin();
     renderAdmin();
 
@@ -156,10 +156,31 @@ describe("AdminPage 外壳：玻璃顶栏 + 左栏菜单 + 壁纸背景 + 玻璃
       "导入导出",
       "安全 / 两步验证",
       "系统管理",
+      "关于",
     ]);
     for (const tab of tabs) {
       expect(tab.querySelector("svg")).not.toBeNull();
     }
+  });
+
+  it("「关于」分区：应用名、构建时注入的版本号、仓库链接、技术栈与版权行", async () => {
+    const user = userEvent.setup();
+    seedAdmin();
+    renderAdmin();
+
+    await user.click(screen.getByRole("tab", { name: "关于" }));
+
+    expect(
+      screen.getByRole("heading", { level: 2, name: "关于" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Nav")).toBeInTheDocument();
+    // 版本号来自 vite define（仓库根 package.json），不是手写常量
+    expect(screen.getByText(__APP_VERSION__)).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: /WorkerHub\/nav/ }),
+    ).toHaveAttribute("href", "https://github.com/WorkerHub/nav");
+    expect(screen.getByText(/React · TypeScript/)).toBeInTheDocument();
+    expect(screen.getByText(/^© \d{4} Nav/)).toBeInTheDocument();
   });
 
   it("宽屏（≥1024px）左栏竖排：Tabs 与 Radix 都按 vertical（aria-orientation 同步）", () => {

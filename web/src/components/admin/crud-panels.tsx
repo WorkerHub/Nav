@@ -1,4 +1,5 @@
 import * as React from "react";
+import { EyeOff } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -42,16 +43,24 @@ import {
 import { useNavStore } from "@/lib/nav-store";
 import type { AdminCategory, AdminLink, Visibility } from "@/lib/types";
 
-/** 分类 CRUD + dnd-kit 拖拽排序（分类列表由调用方按当前场景过滤后传入） */
+/**
+ * 分类 CRUD + dnd-kit 拖拽排序（分类列表由调用方按当前场景过滤后传入）。
+ *
+ * 两层取与（场景公开 AND 分类公开）：所在场景为私有时，行内额外给一条有效状态
+ * 提示「场景私有，对外不可见」—— 分类自身的公开/私有徽标仍按自身标记展示。
+ */
 export function CategoryPanel({
   categories,
   sceneId,
+  sceneVisibility = "public",
   onChanged,
 }: {
   /** 当前场景的分类（已按 sceneId 过滤；无场景概念时为全量） */
   categories: AdminCategory[];
   /** 新建分类的归属场景；null/未传 = 无场景概念（旧后端），不提交该字段 */
   sceneId?: string | null;
+  /** 当前场景的可见性：private 时行内提示「对外不可见」；未传按公开 */
+  sceneVisibility?: Visibility;
   onChanged: () => void;
 }) {
   const [editing, setEditing] = React.useState<AdminCategory | null>(null);
@@ -160,6 +169,12 @@ export function CategoryPanel({
         <Badge variant={c.visibility === "private" ? "default" : "secondary"}>
           {c.visibility === "private" ? "私有" : "公开"}
         </Badge>
+        {sceneVisibility === "private" && (
+          <Badge variant="outline" className="gap-1">
+            <EyeOff aria-hidden="true" />
+            场景私有，对外不可见
+          </Badge>
+        )}
       </span>
     ),
   }));

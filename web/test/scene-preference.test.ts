@@ -1,22 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  ALL_SCENES,
   defaultScene,
   filterByScene,
   resolveAdminScene,
   resolvePublicScene,
-  sortCategoriesByScene,
   SCENE_PREFERENCE_KEY,
   useScenePreferenceStore,
 } from "@/lib/scene-preference";
-import type { Scene } from "@/lib/types";
+import type { Scene, Visibility } from "@/lib/types";
 
 const scene = (
   id: string,
   name: string,
   sortOrder: number,
   isDefault = false,
-): Scene => ({ id, name, icon: null, sortOrder, isDefault });
+  visibility: Visibility = "public",
+): Scene => ({ id, name, icon: null, sortOrder, isDefault, visibility });
 
 /** 默认场景「通用」不是第一段：验证解析不按位置/名字猜默认 */
 const scenes: Scene[] = [
@@ -30,10 +29,10 @@ beforeEach(() => {
   useScenePreferenceStore.setState({ raw: null });
 });
 
-describe("resolvePublicScene：前台偏好回落「全部」", () => {
-  it("没选过 / 选的是 all：一律 all", () => {
-    expect(resolvePublicScene(null, scenes)).toBe(ALL_SCENES);
-    expect(resolvePublicScene(ALL_SCENES, scenes)).toBe(ALL_SCENES);
+describe("resolvePublicScene：前台偏好回落默认场景（不再有「全部」）", () => {
+  it("没选过 / 存量值是已废弃的 all：回落默认场景", () => {
+    expect(resolvePublicScene(null, scenes)).toBe("s_default");
+    expect(resolvePublicScene("all", scenes)).toBe("s_default");
   });
 
   it("命中场景 id：用它（含默认场景，同等成段）", () => {
@@ -41,26 +40,38 @@ describe("resolvePublicScene：前台偏好回落「全部」", () => {
     expect(resolvePublicScene("s_default", scenes)).toBe("s_default");
   });
 
-  it("场景已被删除（偏好里的 id 不在列表里）：回落 all，且不写回偏好", () => {
+  it("场景已被删除（偏好里的 id 不在列表里）：回落默认场景，且不写回偏好", () => {
     localStorage.setItem(SCENE_PREFERENCE_KEY, "s_gone");
-    expect(resolvePublicScene("s_gone", scenes)).toBe(ALL_SCENES);
-    // 纯函数：回落结果不落盘，策略里还保留原值（场景恢复后偏好自然回来）
+    expect(resolvePublicScene("s_gone", scenes)).toBe("s_default");
+    // 纯函数：回落结果不落盘，键里还保留原值（场景恢复后偏好自然回来）
     expect(localStorage.getItem(SCENE_PREFERENCE_KEY)).toBe("s_gone");
   });
 
-  it("没有场景（旧后端 / 老缓存）：all", () => {
-    expect(resolvePublicScene("s_work", [])).toBe(ALL_SCENES);
+  it("偏好指向私有场景、未登录时它不在可用列表里：回落公开的默认场景", () => {
+    // /api/public 只下发公开场景；登录时的私有偏好不能把未登录页带空。
+    const publicScenes = scenes.filter((s) => s.visibility === "public");
+    expect(resolvePublicScene("s_private", publicScenes)).toBe("s_default");
+  });
+
+  it("没有默认标记（防御）：退化为第一个可用场景", () => {
+    const noDefault = [scene("s_a", "甲", 0), scene("s_b", "乙", 1)];
+    expect(resolvePublicScene("s_gone", noDefault)).toBe("s_a");
+  });
+
+  it("没有场景（旧后端 / 老缓存）：null（不做场景过滤）", () => {
+    expect(resolvePublicScene("s_work", [])).toBeNull();
+    expect(resolvePublicScene(null, [])).toBeNull();
   });
 });
 
-describe("resolveAdminScene：后台偏好回落默认场景", () => {
+describe("resolveAdminScene：后台偏好与前台同一套回落", () => {
   it("没有场景：null（后台保持现状平铺，不渲染胶囊）", () => {
     expect(resolveAdminScene("s_work", [])).toBeNull();
   });
 
-  it("没选过 / 选的是 all：默认场景（isDefault 优先，不按位置或名字猜）", () => {
+  it("没选过 / 存量值是 all：默认场景（isDefault 优先，不按位置或名字猜）", () => {
     expect(resolveAdminScene(null, scenes)).toBe("s_default");
-    expect(resolveAdminScene(ALL_SCENES, scenes)).toBe("s_default");
+    expect(resolveAdminScene("all", scenes)).toBe("s_default");
   });
 
   it("命中场景 id：用它", () => {
@@ -78,18 +89,12 @@ describe("resolveAdminScene：后台偏好回落默认场景", () => {
   });
 });
 
-describe("filterByScene：只做显示过滤，保持 DTO 顺序", () => {
+describe("filterByScene：只做单场景显示过滤，保持 DTO 顺序", () => {
   const categories = [
     { id: "c1", sceneId: "s_work" },
     { id: "c2", sceneId: "s_default" },
     { id: "c3", sceneId: "s_work" },
   ];
-
-  it("all：原样返回全部（新数组，不改入参）", () => {
-    const result = filterByScene(categories, ALL_SCENES);
-    expect(result.map((c) => c.id)).toEqual(["c1", "c2", "c3"]);
-    expect(result).not.toBe(categories);
-  });
 
   it("具体场景：只留该场景，相对顺序与 DTO 一致", () => {
     expect(filterByScene(categories, "s_work").map((c) => c.id)).toEqual([
@@ -99,6 +104,12 @@ describe("filterByScene：只做显示过滤，保持 DTO 顺序", () => {
     expect(filterByScene(categories, "s_default").map((c) => c.id)).toEqual([
       "c2",
     ]);
+  });
+
+  it("返回新数组，不改入参", () => {
+    const result = filterByScene(categories, "s_work");
+    expect(result).not.toBe(categories);
+    expect(categories).toHaveLength(3);
   });
 });
 
@@ -189,53 +200,5 @@ describe("useScenePreferenceStore：本机偏好（nav.scene）", () => {
       }),
     );
     expect(useScenePreferenceStore.getState().raw).toBeNull();
-  });
-});
-
-describe("sortCategoriesByScene：「全部」视图按场景顺序", () => {
-  const sceneList: Scene[] = [
-    scene("s_default", "通用", 0, true),
-    scene("s_work", "工作", 1),
-  ];
-  const categories = [
-    { id: "a", sceneId: "s_default", sortOrder: 0 },
-    { id: "b", sceneId: "s_work", sortOrder: 0 },
-    { id: "c", sceneId: "s_default", sortOrder: 2 },
-    { id: "d", sceneId: "s_work", sortOrder: 1 },
-    // 悬空 sceneId（旧数据）：排在最后
-    { id: "e", sceneId: "s_gone", sortOrder: 3 },
-  ];
-
-  it("先按场景 sortOrder、再按分类 sortOrder；未知场景排最后", () => {
-    expect(
-      sortCategoriesByScene(categories, sceneList).map((c) => c.id),
-    ).toEqual(["a", "c", "b", "d", "e"]);
-  });
-
-  it("同序项保持 DTO 顺序（稳定排序）", () => {
-    const tied = [
-      { id: "x", sceneId: "s_default", sortOrder: 0 },
-      { id: "y", sceneId: "s_default", sortOrder: 0 },
-    ];
-    expect(sortCategoriesByScene(tied, sceneList).map((c) => c.id)).toEqual([
-      "x",
-      "y",
-    ]);
-  });
-
-  it("没有场景（旧后端 / 老缓存）：原样返回，保持现状平铺", () => {
-    expect(sortCategoriesByScene(categories, []).map((c) => c.id)).toEqual([
-      "a",
-      "b",
-      "c",
-      "d",
-      "e",
-    ]);
-  });
-
-  it("不修改入参数组", () => {
-    const input = [...categories];
-    sortCategoriesByScene(input, sceneList);
-    expect(input).toEqual(categories);
   });
 });

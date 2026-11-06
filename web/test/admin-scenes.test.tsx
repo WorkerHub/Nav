@@ -70,6 +70,7 @@ const common: AdminScene = {
   icon: null,
   sortOrder: 1,
   isDefault: true,
+  visibility: "public",
   createdAt: stamp,
   updatedAt: stamp,
 };
@@ -79,6 +80,7 @@ const work: AdminScene = {
   icon: null,
   sortOrder: 0,
   isDefault: false,
+  visibility: "public",
   createdAt: stamp,
   updatedAt: stamp,
 };
@@ -255,6 +257,7 @@ describe("ScenePanel：增删改", () => {
       expect(createSceneMock).toHaveBeenCalledWith({
         name: "学习",
         icon: null,
+        visibility: "public",
       }),
     );
     expect(toastSuccessMock).toHaveBeenCalledWith("场景已创建");
@@ -288,6 +291,7 @@ describe("ScenePanel：增删改", () => {
       expect(updateSceneMock).toHaveBeenCalledWith("s_work", {
         name: "工作台",
         icon: null,
+        visibility: "public",
       }),
     );
     expect(toastSuccessMock).toHaveBeenCalledWith("场景已更新");
@@ -325,6 +329,7 @@ describe("ScenePanel：增删改", () => {
       expect(updateSceneMock).toHaveBeenCalledWith("s_work", {
         name: "工作",
         icon: "/assets/assets/icon/scene-new.png",
+        visibility: "public",
       }),
     );
     await waitFor(() =>
@@ -400,6 +405,79 @@ describe("ScenePanel：增删改", () => {
     expect(
       screen.getByText("删除场景后无法恢复，其分类与链接会移入「我的通用」。"),
     ).toBeInTheDocument();
+  });
+});
+
+describe("ScenePanel：场景可见性（两层取与）", () => {
+  const secret: AdminScene = {
+    ...work,
+    id: "s_secret",
+    name: "秘密",
+    visibility: "private",
+  };
+
+  it("列表行显示公开 / 私有徽标（与分类列表同款）", () => {
+    render(<ScenePanel scenes={[common, secret]} onChanged={vi.fn()} />);
+
+    expect(screen.getAllByText("公开")).toHaveLength(1);
+    expect(screen.getAllByText("私有")).toHaveLength(1);
+  });
+
+  it("新建场景可切换为私有，并随创建提交 visibility", async () => {
+    const user = userEvent.setup();
+    render(<ScenePanel scenes={[work, common]} onChanged={vi.fn()} />);
+
+    await user.click(screen.getByRole("button", { name: "新建场景" }));
+    await user.type(screen.getByLabelText("名称"), "秘密");
+    await user.click(screen.getByRole("switch", { name: "私有场景" }));
+    await user.click(screen.getByRole("button", { name: "保存" }));
+
+    await waitFor(() =>
+      expect(createSceneMock).toHaveBeenCalledWith({
+        name: "秘密",
+        icon: null,
+        visibility: "private",
+      }),
+    );
+  });
+
+  it("编辑私有场景：开关已开，保存提交 private", async () => {
+    const user = userEvent.setup();
+    render(<ScenePanel scenes={[work, secret]} onChanged={vi.fn()} />);
+
+    await user.click(screen.getByRole("button", { name: "编辑 秘密" }));
+    expect(screen.getByRole("switch", { name: "私有场景" })).toBeChecked();
+
+    await user.click(screen.getByRole("button", { name: "保存" }));
+
+    await waitFor(() =>
+      expect(updateSceneMock).toHaveBeenCalledWith("s_secret", {
+        name: "秘密",
+        icon: null,
+        visibility: "private",
+      }),
+    );
+  });
+
+  it("默认场景：私有开关禁用并说明原因，保存仍提交 public", async () => {
+    const user = userEvent.setup();
+    render(<ScenePanel scenes={[work, common]} onChanged={vi.fn()} />);
+
+    await user.click(screen.getByRole("button", { name: "编辑 通用" }));
+    expect(screen.getByRole("switch", { name: "私有场景" })).toBeDisabled();
+    expect(
+      screen.getByText("默认场景必须公开，不能设为私有。"),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "保存" }));
+
+    await waitFor(() =>
+      expect(updateSceneMock).toHaveBeenCalledWith("s_default", {
+        name: "通用",
+        icon: null,
+        visibility: "public",
+      }),
+    );
   });
 });
 

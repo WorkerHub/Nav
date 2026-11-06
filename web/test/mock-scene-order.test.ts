@@ -54,3 +54,30 @@ describe("mockDb：分类 sortOrder 按场景追加", () => {
     expect(created.sortOrder).toBe(42);
   });
 });
+
+describe("mockDb：场景可见性（两层取与）", () => {
+  it("公开端点不下发私有场景及其分类，私有端点全量返回", async () => {
+    const secret = await mockDb.createScene({
+      name: "秘密",
+      visibility: "private",
+    });
+    const secretCategory = await mockDb.createCategory({
+      name: "密钥",
+      sceneId: secret.id,
+    });
+
+    const publicData = await mockDb.getPublic();
+    expect(publicData.scenes.map((scene) => scene.id)).not.toContain(secret.id);
+    expect(publicData.categories.map((category) => category.id)).not.toContain(
+      secretCategory.id,
+    );
+
+    // 与真实会话同口径：登录后 /api/private 返回全量场景
+    localStorage.setItem("nav.mock.session", "1");
+    const privateData = await mockDb.getPrivate();
+    expect(privateData.scenes.map((scene) => scene.id)).toContain(secret.id);
+    expect(privateData.categories.map((category) => category.id)).toContain(
+      secretCategory.id,
+    );
+  });
+});
