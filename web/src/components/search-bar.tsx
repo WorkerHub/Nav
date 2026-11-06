@@ -136,7 +136,6 @@ export function SearchBar({
           ref={inputRef}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="搜索…（按 / 聚焦）"
           className="h-11 border-transparent bg-transparent text-base shadow-none focus-visible:ring-0 dark:bg-transparent"
           aria-label="搜索关键词"
           autoComplete="off"

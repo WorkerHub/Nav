@@ -9,8 +9,9 @@ import type { Scene } from "@/lib/types";
  * 前台未登录只有公开场景、登录全量，后台全量；组件内不做可见性判断。
  *
  * 视觉：毛玻璃胶囊行（.glass），默认 `flex-wrap`（后台内容区场景多时换行）。
- * 前台顶栏由调用方覆盖为 `flex-nowrap overflow-x-auto`：窄屏在顶栏内横向滚动，
- * 不换行、不另起一行、不做抽屉。
+ * 前台公共页把它放进右下角竖排坞：调用方用 `className` 覆盖为
+ * `w-28 max-h-32 flex-col flex-nowrap overflow-y-auto`（竖向、组内滚动），
+ * 并用 `itemClassName` 让每一段占满宽度、名称过长时截断。
  *
  * 单选组由 Radix ToggleGroup（type="single"）表达：再点一次当前段 Radix 会回调空串，
  * 这里忽略空串（场景必须有一个生效值，取消选中没有意义）。
@@ -21,6 +22,7 @@ export function SceneSwitcher({
   onValueChange,
   ariaLabel = "切换场景",
   className,
+  itemClassName,
 }: {
   scenes: readonly Scene[];
   /** 当前生效的场景 id */
@@ -28,6 +30,8 @@ export function SceneSwitcher({
   onValueChange: (value: string) => void;
   ariaLabel?: string;
   className?: string;
+  /** 追加到每一段上的类（坞里用 `w-full justify-start` 竖排定宽） */
+  itemClassName?: string;
 }) {
   return (
     <ToggleGroup
@@ -46,9 +50,13 @@ export function SceneSwitcher({
         <ToggleGroupItem
           key={scene.id}
           value={scene.id}
-          className="glass-scene-trigger rounded-full px-3 text-foreground/70"
+          className={cn(
+            "glass-scene-trigger rounded-full px-3 text-foreground/70",
+            itemClassName,
+          )}
         >
-          {scene.name}
+          {/* 名称过长时截断（后台不设宽度约束，视觉与改动前一致） */}
+          <span className="truncate">{scene.name}</span>
         </ToggleGroupItem>
       ))}
     </ToggleGroup>

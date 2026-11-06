@@ -261,9 +261,11 @@ describe("ThemeToggle：三档循环与 localStorage 记忆", () => {
     );
 
     expect(htmlHasDark()).toBe(false);
-    const header = document.querySelector("header") as HTMLElement;
+    const dock = screen.getByRole("complementary", {
+      name: "场景与快捷操作",
+    });
     expect(
-      within(header).getByRole("button", { name: /^主题：/ }),
+      within(dock).getByRole("button", { name: /^主题：/ }),
     ).toHaveAccessibleName("主题：跟随系统，点击切换为浅色");
   });
 });
@@ -284,11 +286,11 @@ describe("刷新后的真实恢复路径：模块初始化就读进 store", () =
   });
 });
 
-describe("PublicPage 顶栏：主题按钮在三种登录态下都在，且固定在右侧", () => {
-  // 只断言与本功能相关的事实（在不在、是不是组内最后一个），不锁按钮总数：
-  // 以后顶栏加任何按钮都不该让这条用例失败。
+describe("PublicPage 右下角坞：主题按钮在三种登录态下都在", () => {
+  // 只断言与本功能相关的事实（在不在、是否固定在坞里），不锁按钮总数：
+  // 以后坞里加任何按钮都不该让这条用例失败。
   it.each(["pending", "anonymous", "authenticated"] as const)(
-    "%s 状态：按钮在，且是顶栏最后一个按钮",
+    "%s 状态：按钮在坞里，登录态按钮变化不影响它",
     (authStatus) => {
       seedVisitor(null);
       seedSite();
@@ -299,12 +301,23 @@ describe("PublicPage 顶栏：主题按钮在三种登录态下都在，且固�
         </ThemeProvider>,
       );
 
-      const header = document.querySelector("header");
-      expect(header).not.toBeNull();
-      const scoped = within(header as HTMLElement);
-      const toggle = scoped.getByRole("button", { name: /^主题：/ });
-      // 登录/后台按钮出现或消失都不会把主题按钮顶来顶去：它始终在组内最右
-      expect(scoped.getAllByRole("button").at(-1)).toBe(toggle);
+      // 顶栏已移除：主题按钮在右下角坞里，位置不随登录态变化
+      expect(document.querySelector("header")).toBeNull();
+      const dock = screen.getByRole("complementary", {
+        name: "场景与快捷操作",
+      });
+      const toggle = within(dock).getByRole("button", { name: /^主题：/ });
+      expect(toggle).toBeInTheDocument();
+
+      const buttonNames = within(dock)
+        .getAllByRole("button")
+        .map((el) => el.getAttribute("aria-label") ?? el.textContent);
+      // 探活未回：坞里只有主题按钮（不闪「登录」）
+      if (authStatus === "pending")
+        expect(buttonNames).toEqual(["主题：跟随系统，点击切换为浅色"]);
+      if (authStatus === "anonymous") expect(buttonNames).toContain("登录");
+      if (authStatus === "authenticated")
+        expect(buttonNames).toEqual(expect.arrayContaining(["后台", "退出"]));
     },
   );
 });

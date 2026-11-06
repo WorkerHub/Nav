@@ -54,7 +54,7 @@ describe("PublicPage 头部：有 Logo 显示 Logo，无 Logo 显示标题文字
   });
 });
 
-describe("PublicPage 顶栏：整条毛玻璃 + 标题入栏 + 分类锚点栏已移除", () => {
+describe("PublicPage 头部：时钟块取代顶栏", () => {
   /** 两个分类各带链接：旧锚点栏在分类多时会横向溢出，现已整块移除。 */
   const categories: SiteCategory[] = [
     {
@@ -85,13 +85,13 @@ describe("PublicPage 顶栏：整条毛玻璃 + 标题入栏 + 分类锚点栏�
     },
   ];
 
-  beforeEach(() => {
+  function seedSite(settings: SiteSettings = baseSettings) {
     useNavStore.setState({
       publicData: {
         categories,
         scenes: [],
         searchEngines: [],
-        settings: baseSettings,
+        settings,
       },
       privateData: null,
       authStatus: "anonymous",
@@ -99,22 +99,78 @@ describe("PublicPage 顶栏：整条毛玻璃 + 标题入栏 + 分类锚点栏�
       loadPublic: async () => {},
       loadPrivate: async () => {},
     });
+  }
+
+  beforeEach(() => {
+    seedSite();
   });
 
-  it("站点标题在顶栏（h1）内，顶栏整条毛玻璃", () => {
+  it("顶栏整条移除：页面没有 header / banner，站点标题在首屏时钟块的 h1 里", () => {
     render(<PublicPage onOpenAdmin={vi.fn()} />);
 
-    const header = document.querySelector("header");
-    expect(header).not.toBeNull();
-    // 整条毛玻璃：glass-bar 提供半透明底 + backdrop-blur + 底部分隔线（web/src/index.css）
-    expect(header).toHaveClass("glass-bar", "sticky", "top-0");
+    expect(document.querySelector("header")).toBeNull();
+    expect(screen.queryByRole("banner")).toBeNull();
 
+    const main = document.querySelector("main");
     const heading = screen.getByRole("heading", { level: 1 });
-    expect(header?.contains(heading)).toBe(true);
+    expect(main?.contains(heading)).toBe(true);
     expect(heading).toHaveTextContent("我的导航");
+    // 时钟块在搜索区之前：正文第一行是「标题 | HH:MM」
+    const search = screen.getByLabelText("搜索关键词");
+    expect(
+      heading.compareDocumentPosition(search) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(screen.getByText(/^\d{2}:\d{2}$/)).toBeInTheDocument();
   });
 
-  it("不再渲染分类锚点栏，正文分类区块与链接照旧", () => {
+  it("正文底部留白足够让最后一行链接超出固定坞（pb-80），锚点偏移调小（scroll-mt-6）", () => {
+    render(<PublicPage onOpenAdmin={vi.fn()} />);
+
+    expect(document.querySelector("main")).toHaveClass("pb-80");
+    const section = document.getElementById("cat-cat-dev");
+    expect(section).toHaveClass("scroll-mt-6");
+    expect(section).not.toHaveClass("scroll-mt-24");
+  });
+
+  it("搜索框不再有 placeholder（引擎选择与提交逻辑不在本用例范围）", () => {
+    render(<PublicPage onOpenAdmin={vi.fn()} />);
+
+    const input = screen.getByLabelText("搜索关键词");
+    expect(input).not.toHaveAttribute("placeholder");
+  });
+
+  it("settings.linkStyle=compact：链接按紧凑横排渲染（无域名、无卡片底）", () => {
+    seedSite({ ...baseSettings, linkStyle: "compact" });
+    render(<PublicPage onOpenAdmin={vi.fn()} />);
+
+    const link = screen.getByRole("link", { name: /GitHub/ });
+    expect(link).not.toHaveClass("glass");
+    expect(link).not.toHaveTextContent("github.com");
+    expect(link.parentElement?.parentElement).toHaveClass("lg:grid-cols-5");
+  });
+
+  it("settings.linkStyle=wide：宽卡片（玻璃底 + 名称与域名两行）", () => {
+    seedSite({ ...baseSettings, linkStyle: "wide" });
+    render(<PublicPage onOpenAdmin={vi.fn()} />);
+
+    const link = screen.getByRole("link", { name: /GitHub/ });
+    expect(link).toHaveClass("glass");
+    expect(link).toHaveTextContent("github.com");
+    expect(link.parentElement?.parentElement).toHaveClass("lg:grid-cols-3");
+  });
+
+  it("旧后端 / 旧缓存没有 linkStyle：回落 classic（玻璃瓦片 + 域名，与改动前一致）", () => {
+    seedSite(baseSettings);
+    render(<PublicPage onOpenAdmin={vi.fn()} />);
+
+    const link = screen.getByRole("link", { name: /GitHub/ });
+    expect(link).toHaveClass("glass");
+    expect(link).toHaveTextContent("github.com");
+    expect(link.parentElement?.parentElement).toHaveClass("xl:grid-cols-8");
+  });
+
+  it("不再渲染分类 anchor 栏，正文分类区块与链接照旧", () => {
     render(<PublicPage onOpenAdmin={vi.fn()} />);
 
     expect(
