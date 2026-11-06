@@ -550,3 +550,92 @@ describe("场景内排序不污染其他场景的 sortOrder", () => {
     ).toEqual(["a1", "a2"]);
   });
 });
+
+describe("链接换分类后作废本地顺序（服务端按目标分类末尾重排）", () => {
+  /** 服务端视角：l1 已从 c1 搬到 c2，落到全局 MAX+1 = 3。 */
+  function serverAfterMove(): AdminData {
+    return {
+      ...makeAdminData(),
+      links: [
+        link("l3", "c1", "MDN", 0),
+        link("l2", "c2", "少数派", 1),
+        link("l4", "c2", "V2EX", 2),
+        link("l1", "c2", "GitHub", 3),
+      ],
+    };
+  }
+
+  it("settleLinkOrder 之后 loadAdmin 用服务端序号：搬走的链接排到新分类末尾", async () => {
+    // 先拖一次排序，让本地权威顺序（localIds）占位
+    await useNavStore.getState().reorderLinks(["l3", "l1", "l2", "l4"]);
+    listAllMock.mockResolvedValue(serverAfterMove());
+
+    await useNavStore.getState().settleLinkOrder();
+    await useNavStore.getState().loadAdmin();
+
+    expect(adminData().links.find((l) => l.id === "l1")).toMatchObject({
+      categoryId: "c2",
+      sortOrder: 3,
+    });
+    expect(orders(adminData().links)).toEqual([0, 1, 2, 3]);
+  });
+
+  it("settleLinkOrder 会等在飞的排序落库，且不让它在落地后写回旧顺序", async () => {
+    const pending = deferred();
+    reorderLinksMock.mockReturnValue(pending.promise);
+
+    // 拖一次排序：请求在飞，本地已是新顺序
+    const inFlight = useNavStore
+      .getState()
+      .reorderLinks(["l3", "l1", "l2", "l4"]);
+    let settled = false;
+    const settling = useNavStore
+      .getState()
+      .settleLinkOrder()
+      .then(() => {
+        settled = true;
+      });
+
+    await flushAsync();
+    // 排序还没落库：换分类必须继续等，不能先去写 PUT
+    expect(settled).toBe(false);
+
+    pending.resolve();
+    await inFlight;
+    await settling;
+
+    // 排序落地+作废之后，服务端的搬迁结果（l1 → c2 末尾）不被旧槽位改写
+    listAllMock.mockResolvedValue(serverAfterMove());
+    await useNavStore.getState().loadAdmin();
+    expect(adminData().links.find((l) => l.id === "l1")).toMatchObject({
+      categoryId: "c2",
+      sortOrder: 3,
+    });
+  });
+
+  it("排序失败时 settleLinkOrder 不把错误抛给换分类的保存", async () => {
+    const pending = deferred();
+    reorderLinksMock.mockReturnValue(pending.promise);
+    listAllMock.mockResolvedValue(makeAdminData());
+
+    const inFlight = useNavStore
+      .getState()
+      .reorderLinks(["l3", "l1", "l2", "l4"]);
+    const settling = useNavStore.getState().settleLinkOrder();
+    pending.reject(new Error("boom"));
+
+    await expect(settling).resolves.toBeUndefined();
+    // 排序本身的失败仍由原调用者（面板 toast）承担
+    await expect(inFlight).rejects.toThrow("boom");
+  });
+
+  it("对照：不作废时本地旧槽位会把新 sortOrder 改写回去", async () => {
+    await useNavStore.getState().reorderLinks(["l3", "l1", "l2", "l4"]);
+    listAllMock.mockResolvedValue(serverAfterMove());
+
+    await useNavStore.getState().loadAdmin();
+
+    // 旧槽位（localIds 里 l1 排第 2）把服务端的 3 改成了 1 → 会插到新分类中间
+    expect(adminData().links.find((l) => l.id === "l1")?.sortOrder).toBe(1);
+  });
+});

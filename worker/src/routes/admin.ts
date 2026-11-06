@@ -27,6 +27,7 @@ import {
   listScenes,
   listSearchEngines,
   nextCategorySortOrder,
+  nextLinkSortOrder,
   nextSceneSortOrder,
   updateCategory,
   updateLink,
@@ -436,13 +437,18 @@ adminRoutes.put("/links/:id", async (c) => {
     data.url = url;
   }
   if (body.categoryId !== undefined) {
-    const category = await findCategory(
-      c.env.DB,
-      prefix,
-      String(body.categoryId),
-    );
+    const categoryId = String(body.categoryId);
+    const category = await findCategory(c.env.DB, prefix, categoryId);
     if (!category) return badRequest("categoryId does not exist");
-    data.category_id = body.categoryId;
+    data.category_id = categoryId;
+    // Moving a link to another category appends it to the end of the target
+    // category (same rule as a category changing scene, nav #17). Link
+    // sort_order is a **global** sequence, so the base is the whole table's
+    // MAX+1 rather than a per-category one. An explicit sortOrder wins and is
+    // kept verbatim; leaving categoryId unchanged never touches the position.
+    if (categoryId !== existing.category_id && body.sortOrder === undefined) {
+      data.sort_order = await nextLinkSortOrder(c.env.DB, prefix);
+    }
   }
   if (body.iconUrl !== undefined)
     data.icon_url =
