@@ -44,9 +44,10 @@ export interface Migration {
 }
 
 /**
- * The migration list for a prefix. `schema_v1` is the whole current nav schema
+ * The migration list for a prefix. `schema_v1` is the whole nav v1 schema
  * (tables, indexes and the `setup_completed` seed): nav v1 shipped without a
- * ledger, so its history is collapsed into one baseline migration.
+ * ledger, so its history is collapsed into one baseline migration. `schema_v2`
+ * adds the scene dimension (scenes table + `categories.scene_id`).
  */
 export function getMigrations(prefix: string): Migration[] {
   const t = (name: string) => `${prefix}${name}`;
@@ -162,6 +163,37 @@ CREATE TABLE IF NOT EXISTS ${t("settings")} (
 
 INSERT OR IGNORE INTO ${t("settings")} (key, value, updated_at)
 VALUES ('setup_completed', '0', strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));
+`,
+    },
+    {
+      name: "schema_v2",
+      sql: `
+CREATE TABLE IF NOT EXISTS ${t("scenes")} (
+  id         TEXT PRIMARY KEY,
+  name       TEXT NOT NULL,
+  icon       TEXT,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  is_default INTEGER NOT NULL DEFAULT 0 CHECK (is_default IN (0, 1)),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS ${idx("scenes_single_default")}
+  ON ${t("scenes")}(is_default) WHERE is_default = 1;
+
+INSERT OR IGNORE INTO ${t("scenes")} (id, name, icon, sort_order, is_default, created_at, updated_at)
+VALUES ('scene_default', '通用', NULL, 0, 1,
+        strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+        strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));
+
+ALTER TABLE ${t("categories")} ADD COLUMN scene_id TEXT REFERENCES ${t("scenes")}(id);
+
+CREATE INDEX IF NOT EXISTS ${idx("categories_scene_id")}
+  ON ${t("categories")}(scene_id);
+
+UPDATE ${t("categories")}
+   SET scene_id = (SELECT id FROM ${t("scenes")} WHERE is_default = 1 ORDER BY sort_order, created_at LIMIT 1)
+ WHERE scene_id IS NULL;
 `,
     },
   ];

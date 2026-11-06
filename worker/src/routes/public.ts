@@ -3,6 +3,7 @@ import { getTablePrefix, type HonoEnv, type SiteDataDto } from "../types";
 import {
   listCategories,
   listLinks,
+  listScenes,
   listSearchEngines,
 } from "../db/queries/content";
 import { getAllSettings } from "../db/queries/settings";
@@ -19,11 +20,12 @@ export const publicRoutes = new Hono<HonoEnv>();
 publicRoutes.get("/", async (c) => {
   const prefix = getTablePrefix(c.env);
   await ensureSchema(c.env);
-  const [categories, links, engines, settings] = await Promise.all([
+  const [categories, links, engines, settings, scenes] = await Promise.all([
     listCategories(c.env.DB, prefix),
     listLinks(c.env.DB, prefix),
     listSearchEngines(c.env.DB, prefix),
     getAllSettings(c.env.DB, prefix),
+    listScenes(c.env.DB, prefix),
   ]);
 
   // Visibility = stricter of category and link: drop public links that live in
@@ -43,6 +45,7 @@ publicRoutes.get("/", async (c) => {
     publicLinks,
     engines,
     settings,
+    scenes,
     { includePrivate: false },
   );
 

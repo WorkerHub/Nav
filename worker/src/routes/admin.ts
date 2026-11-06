@@ -11,25 +11,39 @@ import {
   deleteCategory,
   deleteLinksByCategory,
   deleteLink,
+  deleteSceneMovingCategories,
   deleteSearchEngine,
   findCategory,
+  findDefaultScene,
   findLink,
+  findScene,
   findSearchEngine,
   insertCategory,
   insertLink,
+  insertScene,
   insertSearchEngine,
   listCategories,
   listLinks,
+  listScenes,
   listSearchEngines,
+  nextCategorySortOrder,
+  nextSceneSortOrder,
   updateCategory,
   updateLink,
+  updateScene,
   updateSearchEngine,
 } from "../db/queries/content";
 import { getAllSettings, setSetting } from "../db/queries/settings";
+import { ensureSchema } from "../lib/migrate";
 import { listRecordedMigrations } from "../lib/migrations-runner";
 import { generateId } from "../core/auth";
-import type { Link } from "../types";
-import { toSearchEngineDto, toSiteSettingsDto } from "../services/site-data";
+import type { Category, Link, Scene } from "../types";
+import {
+  normalizeSceneId,
+  toAdminSceneDto,
+  toSearchEngineDto,
+  toSiteSettingsDto,
+} from "../services/site-data";
 import { deleteAssetByPublicPath } from "../services/assets";
 import { deleteAsset, uploadAsset } from "./assets";
 import {
@@ -67,30 +81,46 @@ function parseSortOrder(value: unknown, fallback: number): number {
 
 // ─── Categories ──────────────────────────────────────────────────────────────
 
+/** Admin category DTO: full row plus the normalised `sceneId`. */
+function adminCategoryDto(category: Category, scenes: Scene[]) {
+  return {
+    id: category.id,
+    name: category.name,
+    icon: category.icon,
+    sortOrder: category.sort_order,
+    visibility: category.visibility,
+    sceneId: normalizeSceneId(category.scene_id, scenes),
+    createdAt: category.created_at,
+    updatedAt: category.updated_at,
+  };
+}
+
 adminRoutes.get("/categories", async (c) => {
   const prefix = getTablePrefix(c.env);
-  const categories = await listCategories(c.env.DB, prefix);
+  // Scene-aware handlers need schema_v2. A Worker-only deploy upgrades the
+  // database on the first read path, and the admin SPA can mount before
+  // /api/private finishes — run the same guard here so it never reads `scenes`
+  // before the migration has been applied.
+  await ensureSchema(c.env);
+  const [categories, scenes] = await Promise.all([
+    listCategories(c.env.DB, prefix),
+    listScenes(c.env.DB, prefix),
+  ]);
   return c.json({
-    categories: categories.map((cat) => ({
-      id: cat.id,
-      name: cat.name,
-      icon: cat.icon,
-      sortOrder: cat.sort_order,
-      visibility: cat.visibility,
-      createdAt: cat.created_at,
-      updatedAt: cat.updated_at,
-    })),
+    categories: categories.map((cat) => adminCategoryDto(cat, scenes)),
   });
 });
 
 adminRoutes.post("/categories", async (c) => {
   const prefix = getTablePrefix(c.env);
+  await ensureSchema(c.env);
   const body = await c.req
     .json<{
       name?: unknown;
       icon?: unknown;
       sortOrder?: unknown;
       visibility?: unknown;
+      sceneId?: unknown;
     }>()
     .catch(
       (): {
@@ -98,6 +128,7 @@ adminRoutes.post("/categories", async (c) => {
         icon?: unknown;
         sortOrder?: unknown;
         visibility?: unknown;
+        sceneId?: unknown;
       } => ({}),
     );
 
@@ -108,21 +139,41 @@ adminRoutes.post("/categories", async (c) => {
     return badRequest("visibility must be 'public' or 'private'");
 
   const id = generateId();
+  const icon = typeof body.icon === "string" ? body.icon : null;
+  const sortOrder = parseSortOrder(body.sortOrder, 0);
+
+  // sceneId omitted → the category belongs to the default scene (the seeded
+  // 通用 scene); an explicit but unknown scene is a client error.
+  let sceneId: string;
+  if (body.sceneId !== undefined) {
+    const requested =
+      typeof body.sceneId === "string" ? body.sceneId.trim() : "";
+    const scene = requested
+      ? await findScene(c.env.DB, prefix, requested)
+      : null;
+    if (!scene) return badRequest("sceneId does not exist");
+    sceneId = scene.id;
+  } else {
+    sceneId = (await findDefaultScene(c.env.DB, prefix))?.id ?? "";
+  }
+
   await insertCategory(c.env.DB, prefix, {
     id,
     name,
-    icon: typeof body.icon === "string" ? body.icon : null,
-    sort_order: parseSortOrder(body.sortOrder, 0),
+    icon,
+    sort_order: sortOrder,
     visibility,
+    scene_id: sceneId === "" ? null : sceneId,
   });
 
   return c.json(
     {
       id,
       name,
-      icon: typeof body.icon === "string" ? body.icon : null,
-      sortOrder: parseSortOrder(body.sortOrder, 0),
+      icon,
+      sortOrder,
       visibility,
+      sceneId,
     },
     201,
   );
@@ -130,6 +181,7 @@ adminRoutes.post("/categories", async (c) => {
 
 adminRoutes.put("/categories/:id", async (c) => {
   const prefix = getTablePrefix(c.env);
+  await ensureSchema(c.env);
   const id = c.req.param("id");
   const existing = await findCategory(c.env.DB, prefix, id);
   if (!existing) return c.json({ error: "not found" }, 404);
@@ -151,14 +203,34 @@ adminRoutes.put("/categories/:id", async (c) => {
     data.visibility = body.visibility;
   }
 
+  if (body.sceneId !== undefined) {
+    const requested =
+      typeof body.sceneId === "string" ? body.sceneId.trim() : "";
+    const scene = requested
+      ? await findScene(c.env.DB, prefix, requested)
+      : null;
+    if (!scene) return badRequest("sceneId does not exist");
+    // When a category changes scene and no explicit position was sent, append
+    // it after the target scene's existing categories (MAX+1, the same rule as
+    // deleting a scene) so sort_order cannot collide with target rows. An
+    // explicit sortOrder above wins and is kept verbatim.
+    if (scene.id !== existing.scene_id && body.sortOrder === undefined) {
+      data.sort_order = await nextCategorySortOrder(c.env.DB, prefix, scene.id);
+    }
+    // Links follow their category, so nothing else has to move.
+    data.scene_id = scene.id;
+  }
+
   await updateCategory(c.env.DB, prefix, id, data);
   const updated = await findCategory(c.env.DB, prefix, id);
+  const scenes = await listScenes(c.env.DB, prefix);
   return c.json({
     id: updated?.id,
     name: updated?.name,
     icon: updated?.icon,
     sortOrder: updated?.sort_order,
     visibility: updated?.visibility,
+    sceneId: normalizeSceneId(updated?.scene_id, scenes),
   });
 });
 
@@ -169,6 +241,87 @@ adminRoutes.delete("/categories/:id", async (c) => {
   if (!existing) return c.json({ error: "not found" }, 404);
   await deleteLinksByCategory(c.env.DB, prefix, id);
   await deleteCategory(c.env.DB, prefix, id);
+  return c.json({ success: true });
+});
+
+// ─── Scenes ──────────────────────────────────────────────────────────────────
+
+adminRoutes.get("/scenes", async (c) => {
+  const prefix = getTablePrefix(c.env);
+  await ensureSchema(c.env);
+  const scenes = await listScenes(c.env.DB, prefix);
+  return c.json({ scenes: scenes.map(toAdminSceneDto) });
+});
+
+adminRoutes.post("/scenes", async (c) => {
+  const prefix = getTablePrefix(c.env);
+  await ensureSchema(c.env);
+  const body = await c.req.json().catch(() => ({}));
+
+  const name = typeof body.name === "string" ? body.name.trim() : "";
+  if (!name) return badRequest("name is required");
+
+  const id = generateId();
+  const sortOrder = parseSortOrder(
+    body.sortOrder,
+    await nextSceneSortOrder(c.env.DB, prefix),
+  );
+  // `isDefault` is read-only: the seeded 通用 scene stays the only default, so
+  // any isDefault in the payload is ignored (same rule as PUT).
+  await insertScene(c.env.DB, prefix, {
+    id,
+    name,
+    icon: typeof body.icon === "string" ? body.icon : null,
+    sort_order: sortOrder,
+    is_default: 0,
+  });
+
+  const created = await findScene(c.env.DB, prefix, id);
+  if (!created) return c.json({ error: "not found" }, 404);
+  return c.json(toAdminSceneDto(created), 201);
+});
+
+adminRoutes.put("/scenes/:id", async (c) => {
+  const prefix = getTablePrefix(c.env);
+  await ensureSchema(c.env);
+  const id = c.req.param("id");
+  const existing = await findScene(c.env.DB, prefix, id);
+  if (!existing) return c.json({ error: "not found" }, 404);
+
+  const body = await c.req.json().catch(() => ({}));
+  const data: Record<string, unknown> = {};
+  if (body.name !== undefined) {
+    const name = typeof body.name === "string" ? body.name.trim() : "";
+    if (!name) return badRequest("name must not be empty");
+    data.name = name;
+  }
+  if (body.icon !== undefined)
+    data.icon = typeof body.icon === "string" ? body.icon : null;
+  if (body.sortOrder !== undefined)
+    data.sort_order = parseSortOrder(body.sortOrder, existing.sort_order);
+  // `isDefault` is read-only — silently ignored, exactly as frozen in #16.
+
+  await updateScene(c.env.DB, prefix, id, data);
+  const updated = await findScene(c.env.DB, prefix, id);
+  if (!updated) return c.json({ error: "not found" }, 404);
+  return c.json(toAdminSceneDto(updated));
+});
+
+adminRoutes.delete("/scenes/:id", async (c) => {
+  const prefix = getTablePrefix(c.env);
+  await ensureSchema(c.env);
+  const id = c.req.param("id");
+  const existing = await findScene(c.env.DB, prefix, id);
+  if (!existing) return c.json({ error: "not found" }, 404);
+  if (existing.is_default === 1)
+    return badRequest("default scene cannot be deleted");
+
+  const defaultScene = await findDefaultScene(c.env.DB, prefix);
+  if (!defaultScene) return c.json({ error: "default scene not found" }, 500);
+
+  // One transaction: move categories (links follow by reference) into the
+  // default scene, then delete the scene with an `is_default = 0` guard.
+  await deleteSceneMovingCategories(c.env.DB, prefix, id, defaultScene.id);
   return c.json({ success: true });
 });
 
@@ -375,6 +528,20 @@ adminRoutes.post("/categories/reorder", async (c) => {
     if (typeof id !== "string")
       return badRequest("ids must be an array of category ids");
     await updateCategory(c.env.DB, prefix, id, { sort_order: index });
+  }
+  return c.json({ success: true });
+});
+
+adminRoutes.post("/scenes/reorder", async (c) => {
+  const prefix = getTablePrefix(c.env);
+  await ensureSchema(c.env);
+  const body = await c.req.json().catch(() => ({}));
+  if (!Array.isArray(body.ids))
+    return badRequest("ids must be an array of scene ids");
+  for (const [index, id] of body.ids.entries()) {
+    if (typeof id !== "string")
+      return badRequest("ids must be an array of scene ids");
+    await updateScene(c.env.DB, prefix, id, { sort_order: index });
   }
   return c.json({ success: true });
 });

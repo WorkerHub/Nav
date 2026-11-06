@@ -2,6 +2,27 @@
 
 字段命名 camelCase。变更须回父单 ONE-167 由 Mike 裁决。
 
+## 场景维度（v1.1，nav #16 冻结契约）
+
+场景与分类是正交的两个维度：分类回答「链接是什么」，场景回答「当前处于哪种状态」。不同场景各自拥有一套分类与链接，互不影响。
+
+### 数据模型（迁移 `schema_v2`）
+
+- 新增 `{prefix}scenes`：`id`、`name`、`icon`（可空）、`sort_order`、`is_default`（0/1）、`created_at`、`updated_at`。
+- `is_default = 1` 上有部分唯一索引 `idx_{prefix}scenes_single_default`，保证默认场景至多一个。
+- 迁移写入一行种子：`id = 'scene_default'`、`name = '通用'`、`is_default = 1`。默认场景可改名/改图标/排序，不可删除。
+- `{prefix}categories` 增加可空列 `scene_id`（`REFERENCES {prefix}scenes(id)`）与索引 `idx_{prefix}categories_scene_id`；存量分类在迁移中回填默认场景。列可空是 SQLite `ALTER TABLE ADD COLUMN` 的限制，所有 DTO 都会把 `NULL`/悬空 id 归一化为默认场景 id。
+- 迁移只增不删，由账本保证只执行一次；表名/索引名随 `TABLE_PREFIX` 三态（未配置=`nav_`、自定义值、显式置空）变化。
+
+### 语义
+
+- 每个分类属于且只属于一个场景；链接**没有**场景字段，其场景由所属分类唯一决定。
+- 分类的 `sort_order` 表示**场景内**排序；链接保持原有全局排序语义不变。
+- 默认场景只认 `is_default = 1`，不按 id 或名字「通用」查找；`is_default` 只读，API 不提供转移默认场景的能力。
+- 搜索引擎不属于任何场景，全场景共用；`visibility` 逻辑完全不变。
+- `/api/public`、`/api/private` 返回全部场景，以及各场景下按既有可见性规则可见的分类；服务端不按场景裁剪，场景切换由客户端本地过滤。
+- DTO 形状：`SceneDto{id,name,icon,sortOrder,isDefault}`；后台场景额外返回 `AdminSceneDto = SceneDto + {createdAt,updatedAt}`；分类 DTO 增加 `sceneId`。
+
 ## 公开
 
 ### GET /api/public
@@ -16,6 +37,7 @@
       "name": "分类名",
       "icon": null,
       "sortOrder": 0,
+      "sceneId": "scene_default",
       "links": [
         {
           "id": "uuid",
@@ -27,6 +49,15 @@
           "sortOrder": 0
         }
       ]
+    }
+  ],
+  "scenes": [
+    {
+      "id": "scene_default",
+      "name": "通用",
+      "icon": null,
+      "sortOrder": 0,
+      "isDefault": true
     }
   ],
   "searchEngines": [
@@ -49,6 +80,8 @@
   }
 }
 ```
+
+`scenes`：全部场景，按 `sortOrder, createdAt` 排序，**包含只有私有分类的场景**（场景本身没有 visibility；私有分类与链接仍按原可见性规则不出现）。`/api/private` 与 `/api/public` 同结构，两者都返回全量场景，服务端不按场景裁剪；分类的 `sceneId` 为该分类所属场景，`NULL`/悬空 id 会归一化为默认场景 id。
 
 `wallpaperSource`：首页壁纸来源，`bing`（默认，Bing 每日壁纸）| `custom`（用 `backgroundUrl` 自定义图）。存量库无此键时按 `bing` 返回。
 
@@ -111,13 +144,29 @@ Passkey（WebAuthn，/api/auth/passkey/*，@simplewebauthn/server v14）：
 
 ## 后台（/api/admin/*，全部需会话，未登录 401 JSON `{"error":"unauthorized"}`）
 
+### 场景
+
+- `GET /api/admin/scenes` → `{scenes:[AdminSceneDto]}`（按 `sortOrder, createdAt` 排序，含默认场景）
+- `POST /api/admin/scenes` body `{name, icon?, sortOrder?}` → 201 `AdminSceneDto`
+  - `name` 去空格后不可为空，否则 400 `{"error":"name is required"}`；`icon` 非字符串按 `null`；省略 `sortOrder` 时追加到末尾（现有 `MAX(sort_order)+1`）。
+  - `isDefault` 只读，传入会被忽略；场景名不做库级唯一约束。
+- `PUT /api/admin/scenes/:id` body `{name?, icon?, sortOrder?}` → 更新后的 `AdminSceneDto`
+  - `name` 去空格后不可为空，否则 400 `{"error":"name must not be empty"}`；`isDefault` 静默忽略；不存在 → 404 `{"error":"not found"}`。
+- `DELETE /api/admin/scenes/:id` → `{success:true}`
+  - 默认场景 → 400 `{"error":"default scene cannot be deleted"}`；不存在 → 404 `{"error":"not found"}`。
+  - 非默认场景：在**单个 `db.batch` 事务**里，先把该场景的全部分类移动到默认场景，`sort_order` 追加到默认场景现有分类之后（以默认场景内 `MAX(sort_order)+1` 为基数，保持分类相对顺序），再删除场景（SQL 层带 `is_default = 0` 守卫）；链接随分类走，不搬不改。
+- `POST /api/admin/scenes/reorder` body `{ids:[…]}`（顺序即 `sortOrder`）→ `{success:true}`
+
 ### 分类
 
-- `GET /api/admin/categories` → `{categories:[{id,name,icon,sortOrder,visibility,createdAt,updatedAt}]}`
-- `POST /api/admin/categories` body `{name, icon?, sortOrder?, visibility?}`（visibility: `public`|`private`）→ 201 `{id,…}`
-- `PUT /api/admin/categories/:id`（字段同上，部分更新）→ 更新后对象
+- `GET /api/admin/categories` → `{categories:[{id,name,icon,sortOrder,visibility,sceneId,createdAt,updatedAt}]}`（全量，不按场景裁剪）
+- `POST /api/admin/categories` body `{name, icon?, sortOrder?, visibility?, sceneId?}`（visibility: `public`|`private`）→ 201 `{id,…}`（含 `sceneId`）
+  - 省略 `sceneId` 时归入默认场景；显式传入但场景不存在 → 400 `{"error":"sceneId does not exist"}`。
+- `PUT /api/admin/categories/:id`（字段同上，部分更新）→ 更新后对象（含 `sceneId`）
+  - 改 `sceneId` 即把整个分类移到目标场景（不另开端点）；链接随分类走，不删不改。`sceneId` 不存在 → 400 `{"error":"sceneId does not exist"}`。
+  - 移场景时若同时给了 `sortOrder` 则以它为准；未给 `sortOrder` 时追加到目标场景末尾（目标场景内 `MAX(sort_order)+1`），不会与目标场景现有排序撞号。
 - `DELETE /api/admin/categories/:id` → `{success:true}`（级联删除其链接）
-- `POST /api/admin/categories/reorder` body `{ids:[…]}`（顺序即 sortOrder）→ `{success:true}`
+- `POST /api/admin/categories/reorder` body `{ids:[…]}`（顺序即场景内 sortOrder；客户端只提交当前场景的分类全集，服务端不按场景校验）→ `{success:true}`
 
 ### 链接
 

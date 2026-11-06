@@ -220,7 +220,10 @@ describe("setup response (ledgered migrations)", () => {
     const body = await readJson(res);
     expect(body.success).toBe(true);
     expect(body.tablePrefix).toBe("");
-    expect(body.migrations).toEqual([{ name: "schema_v1", status: "applied" }]);
+    expect(body.migrations).toEqual([
+      { name: "schema_v1", status: "applied" },
+      { name: "schema_v2", status: "applied" },
+    ]);
   });
 
   it("turns a table-prefix conflict into 409 instead of building a second schema", async () => {
