@@ -34,6 +34,7 @@ const scene = {
   icon: null,
   sortOrder: 0,
   isDefault: true,
+  visibility: "public",
   createdAt: "2026-11-06T00:00:00.000Z",
   updatedAt: "2026-11-06T00:00:00.000Z",
 };

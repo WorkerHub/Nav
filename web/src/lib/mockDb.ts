@@ -15,6 +15,7 @@ import type {
   SearchEngine,
   SiteSettings,
   ImportCategory,
+  Visibility,
 } from "./types";
 
 const STORAGE_KEY = "nav.mock.db.v2";
@@ -40,6 +41,7 @@ function makeScene(
   sort: number,
   isDefault: boolean,
   icon: string | null = null,
+  visibility: Visibility = "public",
 ): AdminScene {
   return {
     id,
@@ -47,6 +49,7 @@ function makeScene(
     icon,
     sortOrder: sort,
     isDefault,
+    visibility,
     createdAt: now(),
     updatedAt: now(),
   };
@@ -204,11 +207,21 @@ function load(): MockState {
       if (!Array.isArray(state.scenes) || state.scenes.length === 0) {
         state.scenes = [makeScene(DEFAULT_SCENE_ID, "通用", 0, true)];
       }
+      // 旧 mock 库的场景没有 visibility（schema_v3 之前的形状）：按列默认值 public 补齐，
+      // 与真实迁移同口径（已显式标为 private 的场景保持私有）。
+      state.scenes = state.scenes.map((scene) => ({
+        ...scene,
+        visibility: scene.visibility === "private" ? "private" : "public",
+      }));
       const fallbackSceneId =
         state.scenes.find((scene) => scene.isDefault)?.id ?? state.scenes[0].id;
+      const knownSceneIds = new Set(state.scenes.map((scene) => scene.id));
       state.categories = state.categories.map((category) => ({
         ...category,
-        sceneId: category.sceneId || fallbackSceneId,
+        // 缺失/悬空 sceneId 归一化为默认场景，与后端 DTO 口径一致
+        sceneId: knownSceneIds.has(category.sceneId)
+          ? category.sceneId
+          : fallbackSceneId,
       }));
       return state as MockState;
     }
@@ -243,10 +256,19 @@ function nextCategorySortOrder(state: MockState, sceneId: string): number {
   );
 }
 
-/** 组装站点数据：分类内嵌可见链接（公开端点只含公开，私有端点含全量） */
+/** 组装站点数据：两层取与（场景公开 AND 分类公开）；私有端点返回全量 */
 function toSiteData(state: MockState, includePrivate: boolean): PublicData {
+  // 未登录视角下私有场景整个空间对外不存在：场景本身不下发，其下分类也一并滤掉
+  const scenes = [...state.scenes]
+    .filter((scene) => includePrivate || scene.visibility !== "private")
+    .sort(bySort);
+  const visibleSceneIds = new Set(scenes.map((scene) => scene.id));
   const categories = state.categories
-    .filter((c) => includePrivate || c.visibility === "public")
+    .filter(
+      (c) =>
+        (includePrivate || c.visibility === "public") &&
+        (includePrivate || visibleSceneIds.has(c.sceneId)),
+    )
     .sort(bySort)
     .map((c) => ({
       id: c.id,
@@ -273,7 +295,7 @@ function toSiteData(state: MockState, includePrivate: boolean): PublicData {
     }));
   return {
     categories,
-    scenes: [...state.scenes].sort(bySort),
+    scenes,
     searchEngines: [...state.searchEngines].sort(bySort),
     settings: state.settings,
   };
@@ -392,6 +414,7 @@ export const mockDb = {
     name: string;
     icon?: string | null;
     sortOrder?: number;
+    visibility?: Visibility;
   }): Promise<AdminScene> {
     const state = load();
     const item = makeScene(
@@ -400,6 +423,7 @@ export const mockDb = {
       input.sortOrder ?? state.scenes.length,
       false,
       input.icon ?? null,
+      input.visibility === "private" ? "private" : "public",
     );
     state.scenes.push(item);
     persist(state);
@@ -408,11 +432,15 @@ export const mockDb = {
 
   async updateScene(
     id: string,
-    input: { name?: string; icon?: string | null },
+    input: { name?: string; icon?: string | null; visibility?: Visibility },
   ): Promise<AdminScene> {
     const state = load();
     const item = state.scenes.find((scene) => scene.id === id);
     if (!item) throw new Error("scene not found");
+    // 契约：默认场景不得改为私有（与真实后端同口径，校验失败整次更新不落库）
+    if (item.isDefault && input.visibility === "private") {
+      throw new Error("default scene cannot be private");
+    }
     // isDefault 只读：mock 与后端同口径（忽略该字段）
     Object.assign(item, input, { updatedAt: now() });
     persist(state);

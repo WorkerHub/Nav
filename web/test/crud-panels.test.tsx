@@ -855,3 +855,33 @@ describe("链接保存失败可见（同一错误口径）", () => {
     expect(onChanged).not.toHaveBeenCalled();
   });
 });
+
+describe("CategoryPanel：分类所在场景私有时的有效状态提示", () => {
+  it("场景私有时每行给「场景私有，对外不可见」提示", () => {
+    render(
+      <CategoryPanel
+        categories={[category]}
+        sceneId="scene_default"
+        sceneVisibility="private"
+        onChanged={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("场景私有，对外不可见")).toBeInTheDocument();
+    // 分类自身的可见性徽标照旧保留
+    expect(screen.getByText("公开")).toBeInTheDocument();
+  });
+
+  it("场景公开时不显示该提示", () => {
+    render(
+      <CategoryPanel
+        categories={[category]}
+        sceneId="scene_default"
+        sceneVisibility="public"
+        onChanged={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByText("场景私有，对外不可见")).toBeNull();
+  });
+});

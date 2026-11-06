@@ -495,6 +495,8 @@ export async function adminCreateScene(input: {
   name: string;
   icon?: string | null;
   sortOrder?: number;
+  /** 场景层可见性（契约 #19）：缺省 public；默认场景由后端禁止设私有 */
+  visibility?: "public" | "private";
 }): Promise<AdminScene> {
   if (USE_MOCK) return (await devMock()).createScene(input);
   return request<AdminScene>(`${API.admin}/scenes`, {
@@ -505,7 +507,11 @@ export async function adminCreateScene(input: {
 
 export async function adminUpdateScene(
   id: string,
-  input: { name?: string; icon?: string | null },
+  input: {
+    name?: string;
+    icon?: string | null;
+    visibility?: "public" | "private";
+  },
 ): Promise<AdminScene> {
   if (USE_MOCK) return (await devMock()).updateScene(id, input);
   return request<AdminScene>(`${API.admin}/scenes/${id}`, {

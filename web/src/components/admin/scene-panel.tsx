@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   AssetThumb,
   AssetUploadField,
@@ -28,7 +29,7 @@ import {
 } from "@/lib/api";
 import { useNavStore } from "@/lib/nav-store";
 import { defaultScene } from "@/lib/scene-preference";
-import type { AdminScene } from "@/lib/types";
+import type { AdminScene, Visibility } from "@/lib/types";
 
 /**
  * 场景管理（后台「场景管理」分区，冻结契约 #16 §七）。
@@ -40,6 +41,9 @@ import type { AdminScene } from "@/lib/types";
  *  - 删除非默认场景不会丢数据：后端单事务把它的分类（链接随分类走）移入默认场景；
  *    确认文案里写明移入哪个场景（取默认场景当前名称）；
  *  - 场景 `sortOrder` 是全局顺序（决定前台/后台胶囊的段序），用 store 的乐观排序。
+ *  - 可见性（nav #19 §B4）：与分类表单同一 pattern 的「私有场景」Switch，列表行
+ *    带公开/私有徽标；默认场景必须公开（契约禁止 default → private），表单里直接
+ *    禁用该开关并说明原因，不把一个必然 400 的请求发出去。
  */
 export function ScenePanel({
   scenes,
@@ -52,6 +56,7 @@ export function ScenePanel({
   const [creating, setCreating] = React.useState(false);
   const [name, setName] = React.useState("");
   const [icon, setIcon] = React.useState("");
+  const [visibility, setVisibility] = React.useState<Visibility>("public");
   const draft = useAssetDraftCleanup();
 
   const fallbackScene = defaultScene(scenes);
@@ -59,6 +64,7 @@ export function ScenePanel({
   const openCreate = () => {
     setName("");
     setIcon("");
+    setVisibility("public");
     setCreating(true);
     setEditing(null);
   };
@@ -68,6 +74,7 @@ export function ScenePanel({
     if (!scene) return;
     setName(scene.name);
     setIcon(scene.icon ?? "");
+    setVisibility(scene.visibility === "private" ? "private" : "public");
     setEditing(scene);
     setCreating(false);
   };
@@ -85,7 +92,7 @@ export function ScenePanel({
       return;
     }
     const previousIcon = editing?.icon ?? null;
-    const payload = { name: nextName, icon: icon || null };
+    const payload = { name: nextName, icon: icon || null, visibility };
     try {
       if (editing) {
         await adminUpdateScene(editing.id, payload);
@@ -140,6 +147,11 @@ export function ScenePanel({
     meta: (
       <span className="flex items-center gap-2">
         <AssetThumb src={scene.icon} alt="" />
+        <Badge
+          variant={scene.visibility === "private" ? "default" : "secondary"}
+        >
+          {scene.visibility === "private" ? "私有" : "公开"}
+        </Badge>
         {scene.isDefault && <Badge variant="secondary">默认</Badge>}
       </span>
     ),
@@ -192,6 +204,22 @@ export function ScenePanel({
               onChange={setIcon}
               onUploaded={draft.track}
             />
+            <div className="flex items-center justify-between gap-4">
+              <div className="grid gap-1">
+                <Label htmlFor="scene-vis">私有场景</Label>
+                {editing?.isDefault && (
+                  <p className="text-xs text-muted-foreground">
+                    默认场景必须公开，不能设为私有。
+                  </p>
+                )}
+              </div>
+              <Switch
+                id="scene-vis"
+                checked={visibility === "private"}
+                disabled={editing?.isDefault ?? false}
+                onCheckedChange={(v) => setVisibility(v ? "private" : "public")}
+              />
+            </div>
           </div>
           <DialogFooter>
             <Button onClick={() => void save()}>保存</Button>
