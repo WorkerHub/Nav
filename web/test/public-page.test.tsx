@@ -163,7 +163,7 @@ describe("PublicPage：搜索跳转方式跟随站点设置 searchNewTab", () =>
     await user.type(screen.getByLabelText("搜索关键词"), "nav{enter}");
   }
 
-  it("searchNewTab=false：搜索在当前页跳转（不新开标签）", async () => {
+  it("searchNewTab=false：搜索在当前页跳转，且不带 Referer（rel=noreferrer 锚点）", async () => {
     seedWithEngines({ ...baseSettings, searchNewTab: false });
     const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
     const location = { href: "http://localhost/start" };
@@ -172,12 +172,26 @@ describe("PublicPage：搜索跳转方式跟随站点设置 searchNewTab", () =>
       writable: true,
       value: location as unknown as Location,
     });
+    // jsdom 里点锚点会触发未实现的导航：拦在 prototype 上，只记下被点的锚点
+    const clicked: HTMLAnchorElement[] = [];
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (
+      this: HTMLAnchorElement,
+    ) {
+      clicked.push(this);
+    });
 
     render(<PublicPage onOpenAdmin={vi.fn()} />);
     await submitSearch();
 
     expect(openSpy).not.toHaveBeenCalled();
-    expect(location.href).toBe("https://www.google.com/search?q=nav");
+    // 跳转交给挂了 rel=noreferrer 的临时锚点：这次导航不向搜索站发 Referer
+    expect(clicked).toHaveLength(1);
+    expect(clicked[0].rel).toBe("noreferrer");
+    expect(clicked[0].getAttribute("href")).toBe(
+      "https://www.google.com/search?q=nav",
+    );
+    expect(clicked[0].isConnected).toBe(false);
+    expect(location.href).toBe("http://localhost/start");
   });
 
   it("设置缺该字段（存量库）时按默认开：新标签打开", async () => {
