@@ -212,6 +212,95 @@ describe("在飞期间连续拖拽：串行发送，只补发最新一次", () =
   });
 });
 
+describe("会话切换：旧会话的在飞请求静默退出", () => {
+  it("旧请求落地不改新会话的顺序（localIds 不被旧顺序覆盖）", async () => {
+    const oldReq = deferred();
+    reorderCategoriesMock
+      .mockReturnValueOnce(oldReq.promise)
+      .mockResolvedValue(undefined);
+
+    const doneOld = useNavStore
+      .getState()
+      .reorderCategories(["c2", "c1", "c3"]);
+
+    // 会话失效（401 / 登出）：清空簿记，再以新会话的数据重新进入
+    resetAdminOrderState();
+    seed();
+
+    const doneNew = useNavStore
+      .getState()
+      .reorderCategories(["c3", "c2", "c1"]);
+    // 旧 1 + 新 1：没有因为簿记被清而复活出第二条循环
+    expect(reorderCategoriesMock).toHaveBeenCalledTimes(2);
+
+    oldReq.resolve();
+    await expect(doneOld).resolves.toBeUndefined();
+    await flushAsync();
+
+    // 旧循环必须彻底静默：不得写 localIds，也不得因为「集合看起来变了」而补发请求
+    expect(reorderCategoriesMock).toHaveBeenCalledTimes(2);
+
+    // 旧会话的顺序不得写回 localIds：新会话的整表重拉仍保持自己的顺序
+    listAllMock.mockResolvedValue(makeAdminData());
+    await useNavStore.getState().loadAdmin();
+    expect(ids(adminData().categories)).toEqual(["c3", "c2", "c1"]);
+    await doneNew;
+  });
+
+  it("旧请求失败不回滚新会话，也不触发回拉", async () => {
+    const oldReq = deferred();
+    reorderCategoriesMock
+      .mockReturnValueOnce(oldReq.promise)
+      .mockResolvedValue(undefined);
+
+    const doneOld = useNavStore
+      .getState()
+      .reorderCategories(["c2", "c1", "c3"]);
+    resetAdminOrderState();
+    seed();
+    const doneNew = useNavStore
+      .getState()
+      .reorderCategories(["c3", "c2", "c1"]);
+
+    oldReq.reject(new Error("boom"));
+    await expect(doneOld).resolves.toBeUndefined(); // 静默退出，不抛错给面板
+    await flushAsync();
+
+    expect(ids(adminData().categories)).toEqual(["c3", "c2", "c1"]);
+    expect(listAllMock).not.toHaveBeenCalled();
+    await doneNew;
+  });
+
+  it("旧循环落地不清掉新循环的 running：新会话仍是单飞", async () => {
+    const oldReq = deferred();
+    const newReq = deferred();
+    reorderEnginesMock
+      .mockReturnValueOnce(oldReq.promise)
+      .mockReturnValueOnce(newReq.promise)
+      .mockResolvedValue(undefined);
+
+    const doneOld = useNavStore.getState().reorderEngines(["e2", "e1"]);
+    resetAdminOrderState();
+    seed();
+    const doneNew = useNavStore.getState().reorderEngines(["e2", "e1"]);
+    expect(reorderEnginesMock).toHaveBeenCalledTimes(2);
+
+    oldReq.resolve();
+    await expect(doneOld).resolves.toBeUndefined();
+    await flushAsync();
+
+    // 新会话再点一次：只能登记，不能因为旧循环 finally 清了 running 就并发开新循环
+    const doneThird = useNavStore.getState().reorderEngines(["e1", "e2"]);
+    expect(reorderEnginesMock).toHaveBeenCalledTimes(2);
+
+    newReq.resolve();
+    await doneNew;
+    await doneThird;
+    expect(reorderEnginesMock).toHaveBeenCalledTimes(3);
+    expect(reorderEnginesMock).toHaveBeenLastCalledWith(["e1", "e2"]);
+  });
+});
+
 describe("排序在飞期间发生增删：落地后补发一次", () => {
   it("新建实体不在本次 ids 里时，用当前全量顺序补发，服务端与界面一致", async () => {
     const first = deferred();
@@ -247,6 +336,37 @@ describe("排序在飞期间发生增删：落地后补发一次", () => {
     ]);
     expect(ids(adminData().categories)).toEqual(["c2", "c4", "c1", "c3"]);
     expect(listAllMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("连拖 + 期间落一次整表重拉", () => {
+  it("界面与最后提交的顺序都等于最后一次拖拽（旧顺序不得被写回）", async () => {
+    const first = deferred();
+    const second = deferred();
+    reorderCategoriesMock
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise)
+      .mockResolvedValue(undefined);
+    listAllMock.mockResolvedValue(makeAdminData()); // 服务端始终停在旧顺序
+
+    const done1 = useNavStore.getState().reorderCategories(["c2", "c1", "c3"]);
+    const done2 = useNavStore.getState().reorderCategories(["c3", "c2", "c1"]);
+
+    first.resolve();
+    await flushAsync(); // 第 1 个落地，第 2 个开始飞
+
+    // 这个窗口里落一次整表重拉（例如同时编辑了名称）：不能把界面盖回第 1 次的顺序
+    await useNavStore.getState().loadAdmin();
+    expect(ids(adminData().categories)).toEqual(["c3", "c2", "c1"]);
+
+    second.resolve();
+    await done1;
+    await done2;
+
+    // 补发不得把旧顺序真的写进服务端：最后一次提交必须是用户的最后一次拖拽
+    expect(reorderCategoriesMock).toHaveBeenCalledTimes(2);
+    expect(reorderCategoriesMock).toHaveBeenLastCalledWith(["c3", "c2", "c1"]);
+    expect(ids(adminData().categories)).toEqual(["c3", "c2", "c1"]);
   });
 });
 

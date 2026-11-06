@@ -311,8 +311,19 @@ const reorderTracks: Record<AdminListKey, ReorderTrack> = {
   },
 };
 
+/**
+ * 会话世代号：每次 resetAdminOrderState() 自增。
+ * 旧会话发出去的排序请求无法取消，它们落地时必须能识别出「自己已经过期」，否则会：
+ *  - 把旧会话的顺序写回 localIds（新会话的 loadAdmin 会拿它去投影）；
+ *  - 失败时用旧会话的快照回滚掉新会话刚排好的顺序；
+ *  - 在 finally 里把新会话正在跑的循环的 running 清成 false（于是并发开出第二条循环）。
+ */
+let sessionEpoch = 0;
+
 /** 清空排序簿记（会话结束、测试隔离）。 */
 export function resetAdminOrderState(): void {
+  // 旧循环靠世代号静默退出（请求本身不可取消，但落地后不得再写 track/store）。
+  sessionEpoch += 1;
   for (const key of Object.keys(reorderTracks) as AdminListKey[]) {
     reorderTracks[key].localIds = null;
     reorderTracks[key].pendingIds = null;
@@ -448,12 +459,17 @@ function reorderList(
  * ids 里没有新项，它的 sort_order 会留在新建默认值 0（后端按 sort_order, created_at
  * 排 → 下次加载它落在中间），服务端与界面就不一致了。因此一轮成功之后若当前列表的
  * ids 与刚提交的不同，就用当前全量顺序补发一次（最多 2 次，防病态循环）。
+ *
+ * 会话：入口记住世代号，每次 await 之后先比对；世代已变说明会话已经换了（登出/401），
+ * 本循环直接静默退出——不写 track、不写 store、不抛错，也不清 running。
  */
 async function flushReorder(
   key: AdminListKey,
   send: (ids: string[]) => Promise<void>,
 ): Promise<void> {
   const track = reorderTracks[key];
+  const epoch = sessionEpoch;
+  const stale = () => epoch !== sessionEpoch;
   track.running = true;
   let error: unknown = null;
   let lastSent: string[] | null = null;
@@ -476,16 +492,21 @@ async function flushReorder(
       }
       try {
         await send(ids);
+        if (stale()) return; // 旧会话的请求落地：不得写 localIds
         lastSent = ids;
-        track.localIds = ids;
+        // 有更新顺序待发时不能把 localIds 退回这份旧的：它是「本地权威」，会被
+        // loadAdmin 投影；写回旧值会把界面盖回旧顺序，补发再把旧顺序真的写进服务端。
+        if (!track.pendingIds) track.localIds = ids;
       } catch (e) {
+        if (stale()) return; // 旧会话的失败：不得回滚、不得触发回拉
         if (track.pendingIds) continue;
         error = e;
         break;
       }
     }
   } finally {
-    track.running = false;
+    // 旧循环不得清掉新会话正在跑的循环的 running（否则会并发开出第二条循环）
+    if (!stale()) track.running = false;
   }
   if (!error) {
     track.beforeIds = null; // 本轮全部落库，下次排序重新取快照
