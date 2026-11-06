@@ -35,7 +35,6 @@ import {
   adminDeleteEngine,
   adminImportCategories,
   adminImportEngines,
-  adminReorderEngines,
   adminUpdateEngine,
   adminUpdateSettings,
 } from "@/lib/api";
@@ -132,8 +131,12 @@ export function SearchEnginePanel({
   };
 
   const reorder = async (ids: string[]) => {
-    await adminReorderEngines(ids);
-    onChanged();
+    // 乐观写入在 store 内同步完成（界面立刻定住），成功后不再整表重拉（见 nav-store 排序簿记）。
+    try {
+      await useNavStore.getState().reorderEngines(ids);
+    } catch {
+      toast.error("排序失败，已恢复原顺序");
+    }
   };
 
   const entries: SortableEntry[] = engines.map((e) => ({
