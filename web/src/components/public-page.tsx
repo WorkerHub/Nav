@@ -3,15 +3,26 @@ import { LogIn, LogOut, Settings } from "lucide-react";
 import { FadeIn } from "@/components/glass";
 import { CategorySection } from "@/components/link-grid";
 import { LoginDialog } from "@/components/login-dialog";
+import { SceneSwitcher } from "@/components/scene-switcher";
 import { SearchBar } from "@/components/search-bar";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { WallpaperBackground } from "@/components/wallpaper-background";
 import { useAuthenticated, useNavStore } from "@/lib/nav-store";
+import {
+  ALL_SCENES,
+  filterByScene,
+  resolvePublicScene,
+  sortCategoriesByScene,
+  useScenePreferenceStore,
+} from "@/lib/scene-preference";
 
 /**
  * 公开页（/）：背景图 + 整条毛玻璃顶栏（站点标题/Logo + 登录态操作）+ 毛玻璃搜索框
  * + 「我的导航」图标网格 + 登录后的私有区。
+ *
+ * 场景（与分类正交）：搜索区与导航区之间是场景切换胶囊（只有 1 个场景时不渲染），
+ * 选中值来自本机偏好 `nav.scene`；切换只过滤前端已拿到的全量数据，不发请求。
  *
  * 安全口径：未登录时私有区完全不渲染 —— privateData 未加载时组件树里没有私有区块，
  * 数据请求也只发 /api/public（未登录不请求 /api/private）。
@@ -30,6 +41,9 @@ export function PublicPage({ onOpenAdmin }: { onOpenAdmin: () => void }) {
     setLoginPrompt,
   } = useNavStore();
   const authenticated = useAuthenticated();
+  // 本机场景偏好（前后台共用）：只影响显示过滤，不写服务端
+  const scenePreference = useScenePreferenceStore((s) => s.raw);
+  const setScenePreference = useScenePreferenceStore((s) => s.setRaw);
 
   React.useEffect(() => {
     void loadPublic();
@@ -46,6 +60,18 @@ export function PublicPage({ onOpenAdmin }: { onOpenAdmin: () => void }) {
   const siteData = (authenticated && privateData) || publicData;
   const settings = siteData?.settings;
   const categories = siteData?.categories ?? [];
+  // 旧后端 / 浏览器旧缓存没有 scenes：按「无场景概念」平铺展示，不渲染胶囊
+  const scenes = siteData?.scenes ?? [];
+  const activeScene = resolvePublicScene(scenePreference, scenes);
+  const filteredCategories = filterByScene(categories, activeScene);
+  // 「全部」视图按（场景 sortOrder，分类 sortOrder）本地排序：分类的 sort_order 是
+  // 场景内序号，直接混排会 A0/B0/A1/B1 交错；只排序、不加场景分段标题（仍是现状平铺）。
+  const visibleCategories =
+    activeScene === ALL_SCENES
+      ? sortCategoriesByScene(filteredCategories, scenes)
+      : filteredCategories;
+  // 只有 1 个场景（仅「通用」）时与现状一致：不显示胶囊
+  const showSceneSwitcher = scenes.length > 1;
 
   // 私有标识：/api/private 的分类 DTO 不含 visibility，用「全量里有、公开列表里没有」推导私有分类。
   const publicIds = new Set(publicData?.categories.map((c) => c.id) ?? []);
@@ -136,9 +162,20 @@ export function PublicPage({ onOpenAdmin }: { onOpenAdmin: () => void }) {
           )}
         </FadeIn>
 
-        {/* 导航区：登录后为全量分类（公开+私有），私有分类带「私有」标识 */}
+        {/* 导航区：场景胶囊（可选）+ 分类区块；胶囊在搜索区与导航区之间 */}
         <div className="flex flex-col gap-10">
-          {categories.map((category, i) => (
+          {showSceneSwitcher && (
+            <FadeIn>
+              <SceneSwitcher
+                scenes={scenes}
+                value={activeScene}
+                onValueChange={setScenePreference}
+                includeAll
+                ariaLabel="切换场景"
+              />
+            </FadeIn>
+          )}
+          {visibleCategories.map((category, i) => (
             <FadeIn key={category.id} delay={Math.min(i * 0.05, 0.3)}>
               <CategorySection
                 category={category}

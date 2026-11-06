@@ -20,7 +20,7 @@ const baseSettings: SiteSettings = {
 
 function seed(settings: SiteSettings) {
   useNavStore.setState({
-    publicData: { categories: [], searchEngines: [], settings },
+    publicData: { categories: [], scenes: [], searchEngines: [], settings },
     privateData: null,
     authStatus: "anonymous",
     loginPromptOpen: false,
@@ -61,6 +61,7 @@ describe("PublicPage 顶栏：整条毛玻璃 + 标题入栏 + 分类锚点栏�
       id: "cat-dev",
       name: "开发",
       icon: null,
+      sceneId: "scene_default",
       sortOrder: 0,
       links: [
         {
@@ -74,12 +75,24 @@ describe("PublicPage 顶栏：整条毛玻璃 + 标题入栏 + 分类锚点栏�
         },
       ],
     },
-    { id: "cat-read", name: "阅读", icon: null, sortOrder: 1, links: [] },
+    {
+      id: "cat-read",
+      name: "阅读",
+      icon: null,
+      sceneId: "scene_default",
+      sortOrder: 1,
+      links: [],
+    },
   ];
 
   beforeEach(() => {
     useNavStore.setState({
-      publicData: { categories, searchEngines: [], settings: baseSettings },
+      publicData: {
+        categories,
+        scenes: [],
+        searchEngines: [],
+        settings: baseSettings,
+      },
       privateData: null,
       authStatus: "anonymous",
       loginPromptOpen: false,
@@ -131,7 +144,12 @@ describe("PublicPage：搜索跳转方式跟随站点设置 searchNewTab", () =>
 
   function seedWithEngines(settings: SiteSettings) {
     useNavStore.setState({
-      publicData: { categories: [], searchEngines: engines, settings },
+      publicData: {
+        categories: [],
+        scenes: [],
+        searchEngines: engines,
+        settings,
+      },
       privateData: null,
       authStatus: "anonymous",
       loginPromptOpen: false,

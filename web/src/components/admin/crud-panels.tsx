@@ -42,12 +42,16 @@ import {
 import { useNavStore } from "@/lib/nav-store";
 import type { AdminCategory, AdminLink, Visibility } from "@/lib/types";
 
-/** 分类 CRUD + dnd-kit 拖拽排序 */
+/** 分类 CRUD + dnd-kit 拖拽排序（分类列表由调用方按当前场景过滤后传入） */
 export function CategoryPanel({
   categories,
+  sceneId,
   onChanged,
 }: {
+  /** 当前场景的分类（已按 sceneId 过滤；无场景概念时为全量） */
   categories: AdminCategory[];
+  /** 新建分类的归属场景；null/未传 = 无场景概念（旧后端），不提交该字段 */
+  sceneId?: string | null;
   onChanged: () => void;
 }) {
   const [editing, setEditing] = React.useState<AdminCategory | null>(null);
@@ -98,12 +102,29 @@ export function CategoryPanel({
     }
     const previousIcon = editing?.icon ?? null;
     const payload = { name: nextName, icon: icon || null, visibility };
-    if (editing) {
-      await adminUpdateCategory(editing.id, payload);
-      toast.success("分类已更新");
-    } else {
-      await adminCreateCategory(payload);
-      toast.success("分类已创建");
+    try {
+      if (editing) {
+        await adminUpdateCategory(editing.id, payload);
+        toast.success("分类已更新");
+      } else {
+        // 分类的 sort_order 是场景内排序：新建必须显式给「当前场景末尾」。
+        // 后端省略 sortOrder 会兜底 0（新分类插到场景首项之后，连建多个全堆在 0），
+        // 这里用面板拿到的（已按场景过滤的）分类取最大序号 + 1。
+        const nextSortOrder =
+          categories.reduce((max, c) => Math.max(max, c.sortOrder), -1) + 1;
+        // 新建分类默认归当前场景（契约：场景内排序从此刻开始）
+        await adminCreateCategory({
+          ...payload,
+          sortOrder: nextSortOrder,
+          ...(sceneId ? { sceneId } : {}),
+        });
+        toast.success("分类已创建");
+      }
+    } catch (error) {
+      // 例：另一个标签页刚删掉当前场景 → 后端 400「sceneId does not exist」。
+      // 失败时弹窗保持打开、错误原文透出，不能静默无反应。
+      toast.error(`保存失败：${(error as Error).message}`);
+      return;
     }
     draft.commit();
     // 图标清旧由前端负责（后端只对 settings 的 background/logo 自动清旧）
@@ -121,6 +142,7 @@ export function CategoryPanel({
 
   const reorder = async (ids: string[]) => {
     // 乐观写入在 store 内同步完成（界面立刻定住），成功后不再整表重拉（见 nav-store 排序簿记）。
+    // 分类的 sort_order 是场景内排序：这里提交的就是当前场景的分类全集。
     // 失败时 store 已回滚顺序并按服务端刷新，这里只负责提示。
     try {
       await useNavStore.getState().reorderCategories(ids);
@@ -206,21 +228,28 @@ export function CategoryPanel({
 /** 「所有」筛选项的哨兵值：Radix Select 不允许 SelectItem 用空串（空串代表未选） */
 const ALL_CATEGORIES = "__all__";
 
-/** 链接 CRUD + 分类内排序（后台 links 为扁平列表，按 categoryId 过滤） */
+/** 链接 CRUD + 分类内排序（后台 links 为扁平列表；按当前场景的分类 id 过滤） */
 export function LinkPanel({
   categories,
   links,
   onChanged,
 }: {
+  /** 当前场景的分类（已过滤）：分类选择器只列这些，新建链接只归当前场景 */
   categories: AdminCategory[];
+  /** 全量链接：展示按当前场景过滤，排序重建仍用全局 ids（链接 sort_order 语义不变） */
   links: AdminLink[];
   onChanged: () => void;
 }) {
   const [categoryId, setCategoryId] = React.useState<string>(ALL_CATEGORIES);
   const category = categories.find((c) => c.id === categoryId);
-  // 「所有」：不过滤分类，直接按全局 sortOrder 展示全部链接
+  // 链接没有场景字段：其场景由所属分类唯一决定，这里经分类 id 过滤（保持全局 sortOrder）
+  const sceneCategoryIds = new Set(categories.map((c) => c.id));
+  const sceneLinks = links.filter((l) => sceneCategoryIds.has(l.categoryId));
+  // 「所有」：不过滤分类，直接按全局 sortOrder 展示当前场景全部链接
   const categoryLinks = (
-    category ? links.filter((l) => l.categoryId === category.id) : [...links]
+    category
+      ? sceneLinks.filter((l) => l.categoryId === category.id)
+      : sceneLinks
   ).sort((a, b) => a.sortOrder - b.sortOrder);
   const [editingId, setEditingId] = React.useState<string | null>(null);
   const [creating, setCreating] = React.useState(false);
@@ -278,13 +307,19 @@ export function LinkPanel({
       description: form.description || null,
       visibility: form.visibility,
     };
-    if (editingId) {
-      await adminUpdateLink(editingId, payload);
-      toast.success("链接已更新");
-    } else {
-      if (!category) return;
-      await adminCreateLink({ ...payload, categoryId: category.id });
-      toast.success("链接已创建");
+    try {
+      if (editingId) {
+        await adminUpdateLink(editingId, payload);
+        toast.success("链接已更新");
+      } else {
+        if (!category) return;
+        await adminCreateLink({ ...payload, categoryId: category.id });
+        toast.success("链接已创建");
+      }
+    } catch (error) {
+      // 与分类/场景面板同口径：保存失败弹错误原文，弹窗保持打开
+      toast.error(`保存失败：${(error as Error).message}`);
+      return;
     }
     draft.commit();
     // 图标清旧由前端负责（后端只对 settings 的 background/logo 自动清旧）

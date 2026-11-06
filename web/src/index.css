@@ -192,6 +192,20 @@
   backdrop-filter: blur(var(--glass-blur));
 }
 
+/*
+ * 场景切换胶囊（前台「全部 + 各场景」、后台「各场景」）的选中段：与上面后台左栏
+ * 选中胶囊同一套 token。Radix ToggleGroup 的选中态写在 data-state="on"（Tabs 是
+ * data-state="active"），所以两条规则各管一个组件，不共用选择器。
+ */
+.glass-scene-trigger[data-state="on"] {
+  background: var(--glass-bg);
+  border-color: var(--glass-border);
+  color: var(--foreground);
+  box-shadow: var(--shadow-sm);
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  backdrop-filter: blur(var(--glass-blur));
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

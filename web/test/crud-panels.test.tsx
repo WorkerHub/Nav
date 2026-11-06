@@ -12,6 +12,7 @@ import { CategoryPanel, LinkPanel } from "@/components/admin/crud-panels";
 import { SearchEnginePanel } from "@/components/admin/settings-panels";
 import {
   adminCreateCategory,
+  adminCreateLink,
   adminDeleteAsset,
   adminDeleteCategory,
   adminDeleteEngine,
@@ -41,6 +42,7 @@ vi.mock("@/lib/api", async (importOriginal) => {
     adminUploadAsset: vi.fn(),
     adminDeleteAsset: vi.fn(),
     adminCreateCategory: vi.fn(),
+    adminCreateLink: vi.fn(),
     adminUpdateCategory: vi.fn(),
     adminDeleteCategory: vi.fn(),
     adminDeleteLink: vi.fn(),
@@ -57,6 +59,7 @@ vi.mock("@/lib/api", async (importOriginal) => {
 const uploadMock = vi.mocked(adminUploadAsset);
 const deleteMock = vi.mocked(adminDeleteAsset);
 const createCategoryMock = vi.mocked(adminCreateCategory);
+const createLinkMock = vi.mocked(adminCreateLink);
 const updateCategoryMock = vi.mocked(adminUpdateCategory);
 const deleteCategoryMock = vi.mocked(adminDeleteCategory);
 const deleteLinkMock = vi.mocked(adminDeleteLink);
@@ -80,6 +83,7 @@ const category: AdminCategory = {
   id: "c1",
   name: "开发",
   icon: null,
+  sceneId: "scene_default",
   sortOrder: 0,
   visibility: "public",
   createdAt: stamp,
@@ -141,6 +145,7 @@ function EngineHarness({ onChanged }: { onChanged: () => void }) {
 }
 
 const adminBase: AdminData = {
+  scenes: [],
   categories: [category, { ...category, id: "c2", name: "阅读", sortOrder: 1 }],
   links: [
     link,
@@ -262,6 +267,7 @@ describe("CategoryPanel：分类图标上传 / 回填 / 清旧 / 列表预览", 
       name: "阅读",
       icon: "/assets/assets/icon/cat-1.png",
       visibility: "public",
+      sortOrder: 1,
     });
     expect(deleteMock).not.toHaveBeenCalled();
   });
@@ -756,5 +762,96 @@ describe("排序：乐观即时生效，成功后不再整表重拉", () => {
     expect(editLabels()).toEqual(["编辑 开发", "编辑 阅读"]);
     // 后端逐条 UPDATE 无事务：失败后以服务端为准再刷一次
     expect(listAllMock).toHaveBeenCalled();
+  });
+});
+
+describe("新建分类：场景内末尾排序 + 保存失败可见", () => {
+  it("按当前场景最大 sortOrder + 1 提交（后端省略 sortOrder 会兜底 0、插到场景首项之后）", async () => {
+    const user = userEvent.setup();
+    render(
+      <CategoryPanel
+        categories={[
+          { ...category, sortOrder: 0 },
+          { ...category, id: "c2", name: "阅读", sortOrder: 4 },
+        ]}
+        onChanged={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "新建分类" }));
+    await user.type(screen.getByLabelText("名称"), "工具");
+    await user.click(screen.getByRole("button", { name: "保存" }));
+
+    await waitFor(() => expect(createCategoryMock).toHaveBeenCalledTimes(1));
+    expect(createCategoryMock.mock.calls[0][0]).toMatchObject({
+      name: "工具",
+      sortOrder: 5,
+    });
+  });
+
+  it("新建失败（例：场景已被另一标签页删除）：错误 toast、弹窗不关、不刷新", async () => {
+    createCategoryMock.mockRejectedValueOnce(
+      new Error("sceneId does not exist"),
+    );
+    const onChanged = vi.fn();
+    const user = userEvent.setup();
+    render(<CategoryPanel categories={[category]} onChanged={onChanged} />);
+
+    await user.click(screen.getByRole("button", { name: "新建分类" }));
+    await user.type(screen.getByLabelText("名称"), "工具");
+    await user.click(screen.getByRole("button", { name: "保存" }));
+
+    await waitFor(() =>
+      expect(toastErrorMock).toHaveBeenCalledWith(
+        "保存失败：sceneId does not exist",
+      ),
+    );
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(onChanged).not.toHaveBeenCalled();
+  });
+
+  it("编辑失败同样有错误 toast、弹窗不关", async () => {
+    updateCategoryMock.mockRejectedValueOnce(new Error("boom"));
+    const onChanged = vi.fn();
+    const user = userEvent.setup();
+    render(<CategoryPanel categories={[category]} onChanged={onChanged} />);
+
+    await openRow(user, "开发");
+    await user.click(screen.getByRole("button", { name: "保存" }));
+
+    await waitFor(() =>
+      expect(toastErrorMock).toHaveBeenCalledWith("保存失败：boom"),
+    );
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(onChanged).not.toHaveBeenCalled();
+  });
+});
+
+describe("链接保存失败可见（同一错误口径）", () => {
+  it("新建链接失败：错误 toast、弹窗不关、不刷新", async () => {
+    createLinkMock.mockRejectedValueOnce(new Error("boom"));
+    const onChanged = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <LinkPanel
+        categories={[category]}
+        links={[link]}
+        onChanged={onChanged}
+      />,
+    );
+
+    await user.click(screen.getByRole("combobox", { name: "选择分类" }));
+    await user.click(screen.getByRole("option", { name: "开发" }));
+    await user.click(screen.getByRole("button", { name: "新建链接" }));
+    await user.type(screen.getByLabelText("标题"), "新链接");
+    await user.type(screen.getByLabelText("URL"), "https://example.com/new");
+    await user.click(screen.getByRole("button", { name: "保存" }));
+
+    await waitFor(() =>
+      expect(toastErrorMock).toHaveBeenCalledWith("保存失败：boom"),
+    );
+    expect(createLinkMock).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(onChanged).not.toHaveBeenCalled();
   });
 });

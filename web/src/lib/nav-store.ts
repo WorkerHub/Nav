@@ -11,6 +11,7 @@ import {
   adminReorderCategories,
   adminReorderEngines,
   adminReorderLinks,
+  adminReorderScenes,
   UnauthorizedError,
   ApiError,
   type AdminData,
@@ -79,13 +80,15 @@ interface NavState {
   loadPublic: () => Promise<void>;
   loadAdmin: () => Promise<void>;
   /**
-   * 分类 / 链接 / 搜索引擎排序：立即乐观生效，成功后**不再回拉整表**；
+   * 分类 / 链接 / 搜索引擎 / 场景排序：立即乐观生效，成功后**不再回拉整表**；
    * 失败回滚并在 store 内按服务端再刷一次，然后抛错（由面板 toast）。
-   * 三者的发送串行化、连续拖拽只补发最新顺序，详见文件末尾的排序簿记。
+   * 四者的发送串行化、连续拖拽只补发最新顺序，详见文件末尾的排序簿记。
+   * 分类的 sort_order 是**场景内**排序：分类面板只提交当前场景的分类全集。
    */
   reorderCategories: (ids: string[]) => Promise<void>;
   reorderLinks: (ids: string[]) => Promise<void>;
   reorderEngines: (ids: string[]) => Promise<void>;
+  reorderScenes: (ids: string[]) => Promise<void>;
   /** 设置保存成功后就地刷新 store 里所有存活的 settings 切片（三片原子更新） */
   patchAdminSettings: (settings: SiteSettings) => void;
   loadPrivate: () => Promise<void>;
@@ -242,6 +245,7 @@ export const useNavStore = create<NavState>((set, get) => ({
   reorderLinks: (ids) => reorderList("links", ids, adminReorderLinks),
   reorderEngines: (ids) =>
     reorderList("searchEngines", ids, adminReorderEngines),
+  reorderScenes: (ids) => reorderList("scenes", ids, adminReorderScenes),
 
   defaultEngine: () => {
     const engines = get().publicData?.searchEngines ?? [];
@@ -281,7 +285,7 @@ export function useAuthenticated(): boolean {
 //   pendingIds  在飞期间又拖出的最新顺序（串行发送，只补发最新一次）
 //   beforeIds   本轮排序开始前的显示顺序（终止失败时的即时回滚目标）
 
-type AdminListKey = "categories" | "links" | "searchEngines";
+type AdminListKey = "scenes" | "categories" | "links" | "searchEngines";
 
 /** 一次排序「突发」（用户连续拖拽/连点直到全部落地）的簿记，每个实体一份。 */
 interface ReorderTrack {
@@ -296,6 +300,7 @@ interface ReorderTrack {
 }
 
 const reorderTracks: Record<AdminListKey, ReorderTrack> = {
+  scenes: { localIds: null, pendingIds: null, beforeIds: null, running: false },
   categories: {
     localIds: null,
     pendingIds: null,
@@ -334,11 +339,16 @@ export function resetAdminOrderState(): void {
 
 /**
  * 按 `ids` 重排并重写 sortOrder：ids 里出现的项按 ids 顺序依次填回它们在当前数组里
- * 占据的位置，其它位置（本轮新建、尚未进入 ids 的项）原地不动，sortOrder 统一重写为
- * 0..n-1。
+ * 占据的位置，其它位置（本轮新建、尚未进入 ids 的项）原地不动；sortOrder 只给本次
+ * ids 覆盖到的项重写，序号 = 它在 ids 里的位置（0..k-1）。
  *
  * 链接面板是按 sortOrder 排序渲染的（见 LinkPanel 的 categoryLinks），只换数组顺序而
  * 不改 sortOrder 会看不出变化；乐观写入、loadAdmin 投影、失败回滚都必须走这里。
+ *
+ * 为什么不再把**全表**重写为 0..n-1：分类的 sort_order 自此是**场景内**序号，分类
+ * 面板一次只提交当前场景。若把别的场景也按全局位置重编号，本地 sortOrder 会与服务端
+ * 漂移（删过分类留下空档时尤其明显），随后按「场景内最大 + 1」新建分类就会算小、
+ * 插到场景中间而不是末尾。链接 / 搜索引擎 / 场景的 ids 本来就是全量，效果不变。
  *
  * 未命中项「原地保留」而不是「接到末尾」：后端新建实体的 sort_order 默认 0，下一次
  * 加载它可能落在中间（排序键 sort_order, created_at），本地接到末尾会在刷新时跳位。
@@ -362,10 +372,21 @@ function applyOrder<T extends { id: string; sortOrder: number }>(
   items.forEach((item, index) => {
     if (picked.has(item.id)) result[index] = ordered[next++];
   });
-  return result.map((item, index) => ({ ...item, sortOrder: index }));
+  // 位置只由 ids 的顺序决定：重复 id 不占新位置，序号连续无空档
+  const positionById = new Map<string, number>();
+  for (const id of ids) {
+    if (byId.has(id) && !positionById.has(id)) {
+      positionById.set(id, positionById.size);
+    }
+  }
+  return result.map((item) => {
+    const position = positionById.get(item.id);
+    return position === undefined ? item : { ...item, sortOrder: position };
+  });
 }
 
 type AdminListItems =
+  | AdminData["scenes"]
   | AdminData["categories"]
   | AdminData["links"]
   | AdminData["searchEngines"];
@@ -374,6 +395,7 @@ type AdminListItem = AdminListItems[number];
 
 /** 取 adminData 的某个切片（显式分支，避开联合键的类型收窄问题）。 */
 function listOf(data: AdminData, key: AdminListKey): AdminListItem[] {
+  if (key === "scenes") return data.scenes;
   if (key === "categories") return data.categories;
   if (key === "links") return data.links;
   return data.searchEngines;
@@ -385,6 +407,8 @@ function withList(
   key: AdminListKey,
   items: AdminListItem[],
 ): AdminData {
+  if (key === "scenes")
+    return { ...data, scenes: items as AdminData["scenes"] };
   if (key === "categories")
     return { ...data, categories: items as AdminData["categories"] };
   if (key === "links") return { ...data, links: items as AdminData["links"] };
@@ -396,6 +420,9 @@ function withList(
 
 /** loadAdmin 落地时把本地权威顺序投影到服务端数据上（没有本地排序则原样返回）。 */
 function projectLocalOrder(data: AdminData): AdminData {
+  const scenes = reorderTracks.scenes.localIds
+    ? applyOrder(data.scenes, reorderTracks.scenes.localIds)
+    : data.scenes;
   const categories = reorderTracks.categories.localIds
     ? applyOrder(data.categories, reorderTracks.categories.localIds)
     : data.categories;
@@ -405,13 +432,36 @@ function projectLocalOrder(data: AdminData): AdminData {
   const searchEngines = reorderTracks.searchEngines.localIds
     ? applyOrder(data.searchEngines, reorderTracks.searchEngines.localIds)
     : data.searchEngines;
-  return { ...data, categories, links, searchEngines };
+  return { ...data, scenes, categories, links, searchEngines };
 }
 
 /** 当前 adminData 里某个实体的 id 顺序（未加载时为空）。 */
 function currentIds(key: AdminListKey): string[] {
   const data = useNavStore.getState().adminData;
   return data ? listOf(data, key).map((item) => item.id) : [];
+}
+
+/**
+ * 本次提交的「作用域」：补发比较只看作用域内的集合，而不是整张表。
+ *
+ * 分类的 sort_order 是**场景内**排序（#16 契约），分类面板一次只提交当前场景的全集。
+ * 若补发时拿全量分类去比，lastSent 永远「不等」于全量 → 每次排序都多补发一次全量顺序，
+ * 等于把别的场景的 sort_order 也一并重写（服务端虽不报错，但不是契约口径）。
+ * 链接 / 搜索引擎 / 场景仍是全局顺序，作用域就是全量。
+ */
+function scopeIds(key: AdminListKey, sent: readonly string[]): string[] {
+  const data = useNavStore.getState().adminData;
+  if (!data) return [];
+  if (key !== "categories") return currentIds(key);
+  const sentIds = new Set(sent);
+  const sceneIds = new Set(
+    data.categories
+      .filter((category) => sentIds.has(category.id))
+      .map((category) => category.sceneId),
+  );
+  return data.categories
+    .filter((category) => sceneIds.has(category.sceneId))
+    .map((category) => category.id);
 }
 
 /** 两份 id 顺序是否完全一致（长度 + 逐位）。 */
@@ -432,7 +482,8 @@ function reorderList(
   const data = useNavStore.getState().adminData;
   if (!data) return Promise.resolve(); // 未加载：防御性空转
   const track = reorderTracks[key];
-  track.beforeIds ??= data[key].map((item) => item.id);
+  // 失败回滚快照取「本次提交的作用域」：分类只回滚当前场景，不把别的场景也重编号
+  track.beforeIds ??= scopeIds(key, ids);
   track.localIds = ids;
   track.pendingIds = ids;
   useNavStore.setState({
@@ -479,7 +530,7 @@ async function flushReorder(
       let ids = track.pendingIds;
       track.pendingIds = null;
       if (!ids) {
-        const current = currentIds(key);
+        const current: string[] = lastSent ? scopeIds(key, lastSent) : [];
         if (
           !lastSent ||
           resends >= 2 ||

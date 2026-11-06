@@ -27,7 +27,7 @@ const baseSettings: SiteSettings = {
 /** 站点数据（与 public-page.test.tsx 的 seed 同形） */
 function seedSite(settings: SiteSettings = baseSettings) {
   useNavStore.setState({
-    publicData: { categories: [], searchEngines: [], settings },
+    publicData: { categories: [], scenes: [], searchEngines: [], settings },
     privateData: null,
     adminData: null,
     authStatus: "anonymous",

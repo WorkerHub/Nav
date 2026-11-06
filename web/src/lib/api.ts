@@ -7,6 +7,7 @@
 import type {
   AdminCategory,
   AdminLink,
+  AdminScene,
   AdminSystem,
   ImportCategory,
   PasskeyCredential,
@@ -409,6 +410,8 @@ export async function totpDisable(password: string): Promise<void> {
 // ─── 后台（/api/admin/*，各实体独立 CRUD）──────────────────────────────────────
 
 export interface AdminData {
+  /** 场景（后台数据的一部分） */
+  scenes: AdminScene[];
   categories: AdminCategory[];
   links: AdminLink[];
   searchEngines: SearchEngine[];
@@ -418,13 +421,26 @@ export interface AdminData {
 /** 各实体独立 GET（契约无 /api/admin/all） */
 export async function adminListAll(): Promise<AdminData> {
   if (USE_MOCK) return (await devMock()).adminListAll();
-  const [categories, links, searchEngines, settings] = await Promise.all([
-    request<{ categories: AdminCategory[] }>(`${API.admin}/categories`),
-    request<{ links: AdminLink[] }>(`${API.admin}/links`),
-    request<{ searchEngines: SearchEngine[] }>(`${API.admin}/search-engines`),
-    request<SiteSettings>(`${API.admin}/settings`),
-  ]);
+  const [scenes, categories, links, searchEngines, settings] =
+    await Promise.all([
+      // 场景端点是后加能力：旧后端（还没上 schema_v2 / 场景路由）对该路径返回 404 时，
+      // 只退化「场景维度」（scenes=[] = 无场景概念，前后台按现状平铺），不让整个后台页卡死；
+      // 其它错误（500 / 网络）照常抛出，不掩盖真实故障。
+      request<{ scenes: AdminScene[] }>(`${API.admin}/scenes`).catch(
+        (error: unknown) => {
+          if (error instanceof ApiError && error.status === 404) {
+            return { scenes: [] as AdminScene[] };
+          }
+          throw error;
+        },
+      ),
+      request<{ categories: AdminCategory[] }>(`${API.admin}/categories`),
+      request<{ links: AdminLink[] }>(`${API.admin}/links`),
+      request<{ searchEngines: SearchEngine[] }>(`${API.admin}/search-engines`),
+      request<SiteSettings>(`${API.admin}/settings`),
+    ]);
   return {
+    scenes: scenes.scenes,
     categories: categories.categories,
     links: links.links,
     searchEngines: searchEngines.searchEngines,
@@ -436,6 +452,7 @@ export async function adminListAll(): Promise<AdminData> {
 export async function adminCreateCategory(input: {
   name: string;
   icon?: string | null;
+  sceneId?: string;
   sortOrder?: number;
   visibility?: "public" | "private";
 }): Promise<AdminCategory> {
@@ -465,6 +482,46 @@ export async function adminDeleteCategory(id: string): Promise<void> {
 export async function adminReorderCategories(ids: string[]): Promise<void> {
   if (USE_MOCK) return (await devMock()).reorderCategories(ids);
   await request(`${API.admin}/categories/reorder`, {
+    method: "POST",
+    body: JSON.stringify({ ids }),
+  });
+}
+
+// 场景
+//
+// 契约（#16 §五）：`GET/POST /api/admin/scenes`、`PUT/DELETE /api/admin/scenes/:id`、
+// `POST /api/admin/scenes/reorder`。`isDefault` 只读（PUT 传了后端忽略），默认场景不可删。
+export async function adminCreateScene(input: {
+  name: string;
+  icon?: string | null;
+  sortOrder?: number;
+}): Promise<AdminScene> {
+  if (USE_MOCK) return (await devMock()).createScene(input);
+  return request<AdminScene>(`${API.admin}/scenes`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function adminUpdateScene(
+  id: string,
+  input: { name?: string; icon?: string | null },
+): Promise<AdminScene> {
+  if (USE_MOCK) return (await devMock()).updateScene(id, input);
+  return request<AdminScene>(`${API.admin}/scenes/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function adminDeleteScene(id: string): Promise<void> {
+  if (USE_MOCK) return (await devMock()).deleteScene(id);
+  await request(`${API.admin}/scenes/${id}`, { method: "DELETE" });
+}
+
+export async function adminReorderScenes(ids: string[]): Promise<void> {
+  if (USE_MOCK) return (await devMock()).reorderScenes(ids);
+  await request(`${API.admin}/scenes/reorder`, {
     method: "POST",
     body: JSON.stringify({ ids }),
   });
