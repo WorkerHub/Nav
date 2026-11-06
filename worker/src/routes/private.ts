@@ -4,6 +4,7 @@ import { authMiddleware } from "../middleware/auth";
 import {
   listCategories,
   listLinks,
+  listScenes,
   listSearchEngines,
 } from "../db/queries/content";
 import { getAllSettings } from "../db/queries/settings";
@@ -22,11 +23,12 @@ privateRoutes.use("*", authMiddleware);
 privateRoutes.get("/", async (c) => {
   const prefix = getTablePrefix(c.env);
   await ensureSchema(c.env);
-  const [categories, links, engines, settings] = await Promise.all([
+  const [categories, links, engines, settings, scenes] = await Promise.all([
     listCategories(c.env.DB, prefix),
     listLinks(c.env.DB, prefix),
     listSearchEngines(c.env.DB, prefix),
     getAllSettings(c.env.DB, prefix),
+    listScenes(c.env.DB, prefix),
   ]);
 
   const data: SiteDataDto = buildSiteData(
@@ -34,6 +36,7 @@ privateRoutes.get("/", async (c) => {
     links,
     engines,
     settings,
+    scenes,
     {
       includePrivate: true,
     },

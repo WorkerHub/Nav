@@ -78,6 +78,22 @@ export interface Category {
   icon: string | null;
   sort_order: number;
   visibility: "public" | "private";
+  /**
+   * Owning scene (schema_v2). Nullable because SQLite's ALTER TABLE cannot add
+   * a NOT NULL column; NULL/dangling values are normalised to the default scene
+   * at the DTO layer.
+   */
+  scene_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Scene {
+  id: string;
+  name: string;
+  icon: string | null;
+  sort_order: number;
+  is_default: number;
   created_at: string;
   updated_at: string;
 }
@@ -120,11 +136,28 @@ export interface Setting {
 
 // ─── Frozen API DTOs (camelCase, contract ONE-168) ───────────────────────────
 
+/** Scene DTO shared by the public/private surface and the admin surface. */
+export interface SceneDto {
+  id: string;
+  name: string;
+  icon: string | null;
+  sortOrder: number;
+  isDefault: boolean;
+}
+
+/** `GET/POST/PUT /api/admin/scenes` — SceneDto plus timestamps. */
+export interface AdminSceneDto extends SceneDto {
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface PublicCategoryDto {
   id: string;
   name: string;
   icon: string | null;
   sortOrder: number;
+  /** Owning scene, normalised to the default scene for NULL/dangling ids. */
+  sceneId: string;
   links: PublicLinkDto[];
 }
 
@@ -162,6 +195,12 @@ export interface SiteSettingsDto {
 
 export interface SiteDataDto {
   categories: PublicCategoryDto[];
+  /**
+   * Every scene, ordered by sort_order, created_at — including scenes whose
+   * only categories are private. The server never filters by scene; clients
+   * filter locally.
+   */
+  scenes: SceneDto[];
   searchEngines: SearchEngineDto[];
   settings: SiteSettingsDto;
 }

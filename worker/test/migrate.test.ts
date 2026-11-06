@@ -8,6 +8,7 @@ describe("D1 migration", () => {
     const result = await runMigrations(env);
     expect(result.migrations).toEqual([
       { name: "schema_v1", status: "applied" },
+      { name: "schema_v2", status: "applied" },
     ]);
 
     const db = (env.DB as unknown as SqliteD1).db;
@@ -28,6 +29,7 @@ describe("D1 migration", () => {
       "links",
       "search_engines",
       "settings",
+      "scenes",
     ]) {
       expect(tables).toContain(table);
     }
@@ -38,11 +40,17 @@ describe("D1 migration", () => {
     await runMigrations(env);
     await expect(runMigrations(env)).resolves.toEqual({
       prefix: "",
-      migrations: [{ name: "schema_v1", status: "skipped" }],
+      migrations: [
+        { name: "schema_v1", status: "skipped" },
+        { name: "schema_v2", status: "skipped" },
+      ],
     });
     await expect(runMigrations(env)).resolves.toEqual({
       prefix: "",
-      migrations: [{ name: "schema_v1", status: "skipped" }],
+      migrations: [
+        { name: "schema_v1", status: "skipped" },
+        { name: "schema_v2", status: "skipped" },
+      ],
     });
   });
 
