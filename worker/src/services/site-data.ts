@@ -55,6 +55,15 @@ export function toSiteSettingsDto(
   };
 }
 
+/**
+ * Assembles the public/private site data payload.
+ *
+ * `scenes` must be the **full** scene list (never pre-filtered): the two-layer
+ * visibility rule below needs the private scenes to tell 「belongs to a private
+ * scene」 apart from 「belongs to the default scene」. The caller passes raw rows
+ * and this function is the single place where scene/category/link visibility is
+ * enforced for both surfaces.
+ */
 export function buildSiteData(
   categories: Category[],
   links: Link[],
@@ -132,7 +141,7 @@ function isPublicScene(scene: Scene): boolean {
 }
 
 /** 未登录视角可见的场景（保持原有 sort_order, created_at 顺序）。 */
-export function publicScenes(scenes: Scene[]): Scene[] {
+function publicScenes(scenes: Scene[]): Scene[] {
   return scenes.filter(isPublicScene);
 }
 

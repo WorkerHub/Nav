@@ -7,11 +7,7 @@ import {
   listSearchEngines,
 } from "../db/queries/content";
 import { getAllSettings } from "../db/queries/settings";
-import {
-  buildSiteData,
-  publicCategories,
-  publicScenes,
-} from "../services/site-data";
+import { buildSiteData } from "../services/site-data";
 import { ensureSchema } from "../lib/migrate";
 
 export const publicRoutes = new Hono<HonoEnv>();
@@ -34,26 +30,15 @@ publicRoutes.get("/", async (c) => {
     listScenes(c.env.DB, prefix),
   ]);
 
-  // 两层取与的第一层：私有场景整个空间对外不存在。
-  const visibleScenes = publicScenes(scenes);
-  // 第二层：公开场景内继续按分类自身 visibility 过滤；私有场景下的分类无论
-  // 自身标记都不出现。
-  const visibleCategories = publicCategories(categories, scenes);
-  const visibleCategoryIds = new Set(
-    visibleCategories.map((category) => category.id),
-  );
-  // 链接没有独立可见性，跟随分类（可见性取更严一方）。
-  const publicLinks = links.filter(
-    (link) =>
-      link.visibility === "public" && visibleCategoryIds.has(link.category_id),
-  );
-
+  // 两层取与（场景公开 AND 分类公开）全部由 buildSiteData 收敛：它拿到全量行，
+  // 在输出前把私有场景整个空间（场景/分类/链接）裁掉。这里不预先过滤场景，
+  // 否则「属于私有场景」与「属于默认场景」就分不清了。
   const data: SiteDataDto = buildSiteData(
-    visibleCategories,
-    publicLinks,
+    categories,
+    links,
     engines,
     settings,
-    visibleScenes,
+    scenes,
     { includePrivate: false },
   );
 

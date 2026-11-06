@@ -9,7 +9,8 @@ import { publicRoutes } from "../src/routes/public";
 import { privateRoutes } from "../src/routes/private";
 import { adminRoutes } from "../src/routes/admin";
 import { authRoutes } from "../src/routes/auth";
-import type { Env } from "../src/types";
+import { buildSiteData } from "../src/services/site-data";
+import type { Category, Env, Scene } from "../src/types";
 import { makeEnv, readJson, type SqliteD1 } from "./helpers";
 
 const SETUP_SECRET = "test-setup-secret";
@@ -1115,6 +1116,87 @@ describe("admin categories accept sceneId (incl. moving a category)", () => {
     expect(byId[b.id]).toBe(0);
     expect(byId[a.id]).toBe(1);
     expect(byId[other.id]).toBe(0);
+  });
+});
+
+describe("buildSiteData enforces the scene layer itself", () => {
+  function scene(over: Partial<Scene> & { id: string }): Scene {
+    return {
+      name: over.id,
+      icon: null,
+      sort_order: 0,
+      is_default: 0,
+      visibility: "public",
+      created_at: NOW,
+      updated_at: NOW,
+      ...over,
+    };
+  }
+
+  function category(over: Partial<Category> & { id: string }): Category {
+    return {
+      name: over.id,
+      icon: null,
+      sort_order: 0,
+      visibility: "public",
+      scene_id: "scene_default",
+      created_at: NOW,
+      updated_at: NOW,
+      ...over,
+    };
+  }
+
+  it("drops a private scene's categories even when handed raw rows", () => {
+    const scenes = [
+      scene({ id: "scene_default", is_default: 1 }),
+      scene({ id: "scene_secret", visibility: "private" }),
+    ];
+    const categories = [
+      category({ id: "cat-open" }),
+      category({ id: "cat-secret", scene_id: "scene_secret" }),
+      category({
+        id: "cat-secret-private",
+        scene_id: "scene_secret",
+        visibility: "private",
+      }),
+    ];
+
+    const anonymous = buildSiteData(categories, [], [], {}, scenes, {
+      includePrivate: false,
+    });
+    expect(anonymous.categories.map((row) => row.id)).toEqual(["cat-open"]);
+    expect(anonymous.scenes.map((row) => row.id)).toEqual(["scene_default"]);
+    expect(JSON.stringify(anonymous)).not.toContain("scene_secret");
+
+    // 登录视角不做任何裁剪。
+    const full = buildSiteData(categories, [], [], {}, scenes, {
+      includePrivate: true,
+    });
+    expect(full.categories.map((row) => row.id)).toEqual([
+      "cat-open",
+      "cat-secret",
+      "cat-secret-private",
+    ]);
+    expect(full.scenes.map((row) => row.id)).toEqual([
+      "scene_default",
+      "scene_secret",
+    ]);
+  });
+
+  it("keeps normalising NULL/dangling scene ids to the default scene", () => {
+    const scenes = [scene({ id: "scene_default", is_default: 1 })];
+    const categories = [
+      category({ id: "cat-null", scene_id: null }),
+      category({ id: "cat-dangling", scene_id: "ghost" }),
+    ];
+
+    const data = buildSiteData(categories, [], [], {}, scenes, {
+      includePrivate: false,
+    });
+    expect(data.categories.map((row) => [row.id, row.sceneId])).toEqual([
+      ["cat-null", "scene_default"],
+      ["cat-dangling", "scene_default"],
+    ]);
   });
 });
 
