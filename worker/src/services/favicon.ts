@@ -15,8 +15,10 @@ import type { Env } from "../types";
 import {
   listCategories,
   listLinks,
+  listScenes,
   listSearchEngines,
 } from "../db/queries/content";
+import { publicCategories } from "./site-data";
 import {
   detectBinaryImageKind,
   isSvgDocument,
@@ -590,20 +592,29 @@ export async function loadIconRegistry(
       listSearchEngines(env.DB, prefix),
       listLinks(env.DB, prefix),
     ]);
-    const privateCategoryIds = new Set(
-      categories
-        .filter((category) => category.visibility === "private")
-        .map((category) => category.id),
+    // 场景维度可能还没迁移（库停在 schema_v1，或 Worker 先于库升级）：这时没有
+    // `scenes` 表，`listScenes` 会抛 `no such table`。不能让它把整段查询一起拖
+    // 下水——那会让一次未迁移的读把全部公开 host 变成「未登记」。降级为引入场景
+    // 维度之前的口径：只看分类自身 visibility。
+    const scenes = await listScenes(env.DB, prefix).catch(() => null);
+    // 匿名视角的可见分类 = 场景公开 AND 分类公开（两层取与，与 /api/public
+    // 同一口径）：私有场景整个空间对匿名不存在，其下链接的 host 也不算登记。
+    const visibleCategoryIds = new Set(
+      (scenes === null
+        ? categories.filter((category) => category.visibility === "public")
+        : publicCategories(categories, scenes)
+      ).map((category) => category.id),
     );
 
     for (const engine of engines) {
       add(engine.url_template.replace("{q}", ""));
     }
     for (const link of links) {
-      // 可见性取更严一方：私有分类下的 public 链接同样不算公开（与 /api/public 一致）。
+      // 可见性取更严一方：私有分类下的 public 链接、私有场景下的链接同样不算
+      // 公开（与 /api/public 一致）。
       if (!options.includePrivate) {
         if (link.visibility !== "public") continue;
-        if (privateCategoryIds.has(link.category_id)) continue;
+        if (!visibleCategoryIds.has(link.category_id)) continue;
       }
       add(link.url);
     }

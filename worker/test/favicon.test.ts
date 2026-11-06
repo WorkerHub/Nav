@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Hono } from "hono";
-import { runMigrations } from "../src/lib/migrations-runner";
+import {
+  applyMigrationList,
+  runMigrations,
+} from "../src/lib/migrations-runner";
+import { getMigrations } from "../src/lib/migrations";
 import { assetPublicRoutes } from "../src/routes/assets";
 import { iconRoutes } from "../src/routes/icon";
 import {
@@ -389,6 +393,82 @@ describe("loadIconRegistry", () => {
     expect(authed.get("hidden.example")).toEqual({
       origin: "https://hidden.example",
     });
+  });
+
+  it("私有场景下的链接对匿名不算登记（两层取与）", async () => {
+    const now = new Date().toISOString();
+    sql(env)
+      .prepare(
+        "INSERT INTO scenes (id, name, icon, sort_order, is_default, visibility, created_at, updated_at) VALUES ('scene_secret', '秘密', NULL, 9, 0, 'private', ?, ?)",
+      )
+      .run(now, now);
+    sql(env)
+      .prepare(
+        "INSERT INTO categories (id, name, icon, sort_order, visibility, scene_id, created_at, updated_at) VALUES ('cat-secret', '秘密分类', NULL, 0, 'public', 'scene_secret', ?, ?)",
+      )
+      .run(now, now);
+    sql(env)
+      .prepare(
+        "INSERT INTO links (id, category_id, title, url, icon_url, description, sort_order, visibility, created_at, updated_at) VALUES ('l-secret', 'cat-secret', 't', 'https://hidden-scene.example/', NULL, NULL, 0, 'public', ?, ?)",
+      )
+      .run(now, now);
+
+    const anonymous = await loadIconRegistry(env, getTablePrefix(env), {
+      includePrivate: false,
+    });
+    expect(anonymous.has("hidden-scene.example")).toBe(false);
+
+    const authed = await loadIconRegistry(env, getTablePrefix(env), {
+      includePrivate: true,
+    });
+    expect(authed.get("hidden-scene.example")).toEqual({
+      origin: "https://hidden-scene.example",
+    });
+  });
+
+  it("库停在 schema_v1（没有 scenes 表）时仍按旧的分类口径登记公开 host", async () => {
+    // Worker 先于库升级时数据库可能还停在 schema_v1：没有 scenes 表，也没有
+    // categories.scene_id。此时必须退化为「只看分类 visibility」，不能因为
+    // listScenes 抛错就把整张注册表清空（全部公开 host 变成 404）。
+    const legacy = makeEnv();
+    const v1 = getMigrations("")[0];
+    if (!v1) throw new Error("schema_v1 missing");
+    await applyMigrationList(legacy.DB, "", [v1]);
+
+    const now = new Date().toISOString();
+    sql(legacy)
+      .prepare(
+        "INSERT INTO categories (id, name, icon, sort_order, visibility, created_at, updated_at) VALUES ('cat-v1', 'v1', NULL, 0, 'public', ?, ?)",
+      )
+      .run(now, now);
+    sql(legacy)
+      .prepare(
+        "INSERT INTO categories (id, name, icon, sort_order, visibility, created_at, updated_at) VALUES ('cat-v1-private', 'v1p', NULL, 1, 'private', ?, ?)",
+      )
+      .run(now, now);
+    sql(legacy)
+      .prepare(
+        "INSERT INTO links (id, category_id, title, url, icon_url, description, sort_order, visibility, created_at, updated_at) VALUES ('l-v1', 'cat-v1', 't', 'https://legacy.example/', NULL, NULL, 0, 'public', ?, ?)",
+      )
+      .run(now, now);
+    sql(legacy)
+      .prepare(
+        "INSERT INTO links (id, category_id, title, url, icon_url, description, sort_order, visibility, created_at, updated_at) VALUES ('l-v1-hidden', 'cat-v1-private', 't', 'https://hidden-v1.example/', NULL, NULL, 0, 'public', ?, ?)",
+      )
+      .run(now, now);
+
+    const registry = await loadIconRegistry(legacy, getTablePrefix(legacy), {
+      includePrivate: false,
+    });
+    expect([...registry.keys()]).toEqual(["legacy.example"]);
+
+    const authed = await loadIconRegistry(legacy, getTablePrefix(legacy), {
+      includePrivate: true,
+    });
+    expect([...authed.keys()].sort()).toEqual([
+      "hidden-v1.example",
+      "legacy.example",
+    ]);
   });
 
   it("库还没初始化时退化为空注册表（不抛）", async () => {

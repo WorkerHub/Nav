@@ -8,7 +8,13 @@ const CATEGORY_COLUMNS = [
   "visibility",
   "scene_id",
 ] as const;
-const SCENE_COLUMNS = ["name", "icon", "sort_order", "is_default"] as const;
+const SCENE_COLUMNS = [
+  "name",
+  "icon",
+  "sort_order",
+  "is_default",
+  "visibility",
+] as const;
 const LINK_COLUMNS = [
   "category_id",
   "title",
@@ -327,13 +333,14 @@ export async function insertScene(
     icon: string | null;
     sort_order: number;
     is_default: number;
+    visibility: string;
   },
 ): Promise<void> {
   const now = nowIso();
   await db
     .prepare(
-      `INSERT INTO ${prefix}scenes (id, name, icon, sort_order, is_default, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO ${prefix}scenes (id, name, icon, sort_order, is_default, visibility, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .bind(
       data.id,
@@ -341,6 +348,7 @@ export async function insertScene(
       data.icon,
       data.sort_order,
       data.is_default,
+      data.visibility,
       now,
       now,
     )
@@ -356,6 +364,7 @@ export async function updateScene(
     icon: string | null;
     sort_order: number;
     is_default: number;
+    visibility: string;
   }>,
 ): Promise<void> {
   assertColumns("updateScene", data as Record<string, unknown>, SCENE_COLUMNS);

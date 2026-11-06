@@ -94,6 +94,11 @@ export interface Scene {
   icon: string | null;
   sort_order: number;
   is_default: number;
+  /**
+   * Scene-level visibility (schema_v3). ANDed with the category's own flag: a
+   * private scene makes its whole space invisible to anonymous visitors.
+   */
+  visibility: "public" | "private";
   created_at: string;
   updated_at: string;
 }
@@ -143,6 +148,11 @@ export interface SceneDto {
   icon: string | null;
   sortOrder: number;
   isDefault: boolean;
+  /**
+   * `public` | `private` (schema_v3). The public surface only ever carries
+   * public scenes (a private scene does not exist for anonymous visitors).
+   */
+  visibility: Visibility;
 }
 
 /** `GET/POST/PUT /api/admin/scenes` — SceneDto plus timestamps. */
@@ -196,9 +206,10 @@ export interface SiteSettingsDto {
 export interface SiteDataDto {
   categories: PublicCategoryDto[];
   /**
-   * Every scene, ordered by sort_order, created_at — including scenes whose
-   * only categories are private. The server never filters by scene; clients
-   * filter locally.
+   * Ordered by sort_order, created_at. `/api/private` returns every scene;
+   * `/api/public` returns only `visibility = 'public'` scenes (a private scene
+   * and everything under it is invisible to anonymous visitors). Scenes whose
+   * only categories are private are still public scenes and stay listed.
    */
   scenes: SceneDto[];
   searchEngines: SearchEngineDto[];

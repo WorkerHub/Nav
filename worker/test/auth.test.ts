@@ -223,6 +223,7 @@ describe("setup response (ledgered migrations)", () => {
     expect(body.migrations).toEqual([
       { name: "schema_v1", status: "applied" },
       { name: "schema_v2", status: "applied" },
+      { name: "schema_v3", status: "applied" },
     ]);
   });
 

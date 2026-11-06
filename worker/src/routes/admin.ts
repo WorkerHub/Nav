@@ -79,6 +79,11 @@ function parseSortOrder(value: unknown, fallback: number): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
+/** 「请求把该场景设为默认」的既有载荷口径（`true` 或 `1`；其余一律忽略）。 */
+function wantsDefault(value: unknown): boolean {
+  return value === true || value === 1;
+}
+
 // ─── Categories ──────────────────────────────────────────────────────────────
 
 /** Admin category DTO: full row plus the normalised `sceneId`. */
@@ -261,6 +266,18 @@ adminRoutes.post("/scenes", async (c) => {
   const name = typeof body.name === "string" ? body.name.trim() : "";
   if (!name) return badRequest("name is required");
 
+  // 场景可见性（nav #19 B3）：创建接收 `visibility`，缺省 public，非法值 400。
+  if (body.visibility !== undefined && !isVisibility(body.visibility))
+    return badRequest("visibility must be 'public' or 'private'");
+  const visibility: Visibility = isVisibility(body.visibility)
+    ? body.visibility
+    : "public";
+
+  // B2 ①：私有场景不得被设为默认。`isDefault` 本身仍只读（#17 冻结：公开场景
+  // 传了照旧静默忽略），但「把私有场景设成默认」这个请求直接 400。
+  if (wantsDefault(body.isDefault) && visibility === "private")
+    return badRequest("private scene cannot be set as default");
+
   const id = generateId();
   const sortOrder = parseSortOrder(
     body.sortOrder,
@@ -274,6 +291,7 @@ adminRoutes.post("/scenes", async (c) => {
     icon: typeof body.icon === "string" ? body.icon : null,
     sort_order: sortOrder,
     is_default: 0,
+    visibility,
   });
 
   const created = await findScene(c.env.DB, prefix, id);
@@ -300,6 +318,22 @@ adminRoutes.put("/scenes/:id", async (c) => {
   if (body.sortOrder !== undefined)
     data.sort_order = parseSortOrder(body.sortOrder, existing.sort_order);
   // `isDefault` is read-only — silently ignored, exactly as frozen in #16.
+
+  // 场景可见性（nav #19 B2/B3）：非法值 400，缺省保持原值。
+  let visibility: Visibility = existing.visibility;
+  if (body.visibility !== undefined) {
+    if (!isVisibility(body.visibility))
+      return badRequest("visibility must be 'public' or 'private'");
+    visibility = body.visibility;
+  }
+  // B2 ②：默认场景不得改为私有 —— 须先把默认移走（#17 契约不提供转移默认的
+  // 接口，所以现有 API 上就是「默认场景只能是公开的」）。
+  if (existing.is_default === 1 && visibility === "private")
+    return badRequest("default scene cannot be private");
+  // B2 ①：私有场景不得被设为默认。
+  if (wantsDefault(body.isDefault) && visibility === "private")
+    return badRequest("private scene cannot be set as default");
+  if (body.visibility !== undefined) data.visibility = visibility;
 
   await updateScene(c.env.DB, prefix, id, data);
   const updated = await findScene(c.env.DB, prefix, id);

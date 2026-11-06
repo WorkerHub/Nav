@@ -47,7 +47,8 @@ export interface Migration {
  * The migration list for a prefix. `schema_v1` is the whole nav v1 schema
  * (tables, indexes and the `setup_completed` seed): nav v1 shipped without a
  * ledger, so its history is collapsed into one baseline migration. `schema_v2`
- * adds the scene dimension (scenes table + `categories.scene_id`).
+ * adds the scene dimension (scenes table + `categories.scene_id`). `schema_v3`
+ * adds `scenes.visibility` (scene-level visibility, ANDed with the category's).
  */
 export function getMigrations(prefix: string): Migration[] {
   const t = (name: string) => `${prefix}${name}`;
@@ -194,6 +195,20 @@ CREATE INDEX IF NOT EXISTS ${idx("categories_scene_id")}
 UPDATE ${t("categories")}
    SET scene_id = (SELECT id FROM ${t("scenes")} WHERE is_default = 1 ORDER BY sort_order, created_at LIMIT 1)
  WHERE scene_id IS NULL;
+`,
+    },
+    {
+      // Scene-level visibility (nav #19 B1/B3): `public` | `private`, the same
+      // vocabulary the category uses. Existing rows take the DEFAULT 'public',
+      // so the default scene (and every other pre-existing scene) stays public
+      // after the upgrade — the「default scene must be public」invariant holds
+      // for existing data without a backfill.
+      // Same replay rule as schema_v2's `ALTER TABLE categories ADD COLUMN`:
+      // SQLite has no `ADD COLUMN IF NOT EXISTS`, so safety comes from the
+      // ledger (a recorded migration is skipped, the ALTER never runs twice).
+      name: "schema_v3",
+      sql: `
+ALTER TABLE ${t("scenes")} ADD COLUMN visibility TEXT NOT NULL DEFAULT 'public' CHECK (visibility IN ('public', 'private'));
 `,
     },
   ];

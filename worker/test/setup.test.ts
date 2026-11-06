@@ -217,6 +217,7 @@ describe("POST /api/setup (secret-gated upgrade)", () => {
       migrations: [
         { name: "schema_v1", status: "applied" },
         { name: "schema_v2", status: "applied" },
+        { name: "schema_v3", status: "applied" },
       ],
       ownerExists: false,
     });
@@ -240,6 +241,7 @@ describe("POST /api/setup (secret-gated upgrade)", () => {
       migrations: [
         { name: "schema_v1", status: "skipped" },
         { name: "schema_v2", status: "skipped" },
+        { name: "schema_v3", status: "skipped" },
       ],
       ownerExists: true,
     });
@@ -305,7 +307,7 @@ describe("admin system endpoints", () => {
     expect(await readJson(res)).toEqual({
       tablePrefix: "",
       setupPageEnabled: false,
-      ledger: ["schema_v1", "schema_v2"],
+      ledger: ["schema_v1", "schema_v2", "schema_v3"],
     });
   });
 
@@ -325,6 +327,7 @@ describe("admin system endpoints", () => {
       migrations: [
         { name: "schema_v1", status: "skipped" },
         { name: "schema_v2", status: "skipped" },
+        { name: "schema_v3", status: "skipped" },
       ],
       ownerExists: true,
     });

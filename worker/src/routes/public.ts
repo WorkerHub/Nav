@@ -13,9 +13,11 @@ import { ensureSchema } from "../lib/migrate";
 export const publicRoutes = new Hono<HonoEnv>();
 
 /**
- * GET /api/public — public categories + public links, search engines, site
- * settings. Private rows are never fetched into this payload, so a private
- * category/link cannot leak here (SPEC §2). Publicly cacheable.
+ * GET /api/public — public scenes + public categories + public links, search
+ * engines, site settings. Private rows are never delivered, and a private scene
+ * makes its whole space (scene, categories, links) disappear for anonymous
+ * visitors (nav #19 B1/B3: visibility = scene public AND category public).
+ * Publicly cacheable.
  */
 publicRoutes.get("/", async (c) => {
   const prefix = getTablePrefix(c.env);
@@ -28,21 +30,12 @@ publicRoutes.get("/", async (c) => {
     listScenes(c.env.DB, prefix),
   ]);
 
-  // Visibility = stricter of category and link: drop public links that live in
-  // a private category before assembling the DTO (SPEC §2).
-  const privateCategoryIds = new Set(
-    categories
-      .filter((cat) => cat.visibility === "private")
-      .map((cat) => cat.id),
-  );
-  const publicLinks = links.filter(
-    (link) =>
-      link.visibility === "public" && !privateCategoryIds.has(link.category_id),
-  );
-
+  // 两层取与（场景公开 AND 分类公开）全部由 buildSiteData 收敛：它拿到全量行，
+  // 在输出前把私有场景整个空间（场景/分类/链接）裁掉。这里不预先过滤场景，
+  // 否则「属于私有场景」与「属于默认场景」就分不清了。
   const data: SiteDataDto = buildSiteData(
-    categories.filter((cat) => cat.visibility === "public"),
-    publicLinks,
+    categories,
+    links,
     engines,
     settings,
     scenes,

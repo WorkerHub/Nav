@@ -55,6 +55,15 @@ export function toSiteSettingsDto(
   };
 }
 
+/**
+ * Assembles the public/private site data payload.
+ *
+ * `scenes` must be the **full** scene list (never pre-filtered): the two-layer
+ * visibility rule below needs the private scenes to tell 「belongs to a private
+ * scene」 apart from 「belongs to the default scene」. The caller passes raw rows
+ * and this function is the single place where scene/category/link visibility is
+ * enforced for both surfaces.
+ */
 export function buildSiteData(
   categories: Category[],
   links: Link[],
@@ -63,6 +72,12 @@ export function buildSiteData(
   scenes: Scene[],
   opts: { includePrivate: boolean },
 ): SiteDataDto {
+  // 两层取与（nav #19 B1）：有效可见性 = 场景公开 AND 分类公开。私有场景整个
+  // 空间对外不存在——场景本身与它下面的全部分类（无论分类自身标记）都不进入
+  // 未登录数据；分类自身 visibility 保留不动，不做级联改写。登录视角全量可见。
+  const visibleScenes = opts.includePrivate ? scenes : publicScenes(scenes);
+  const visibleSceneIds = new Set(visibleScenes.map((scene) => scene.id));
+
   const linksByCategory = new Map<string, Link[]>();
   for (const link of links) {
     const bucket = linksByCategory.get(link.category_id) ?? [];
@@ -77,6 +92,13 @@ export function buildSiteData(
   for (const category of categories) {
     const categoryPrivate = category.visibility === "private";
     if (categoryPrivate && !opts.includePrivate) continue;
+    // 所属场景在未登录视角不可见（私有场景）→ 该分类整条不出现，链接随分类。
+    if (
+      !opts.includePrivate &&
+      !visibleSceneIds.has(normalizeSceneId(category.scene_id, scenes))
+    ) {
+      continue;
+    }
 
     const visibleLinks = (linksByCategory.get(category.id) ?? []).filter(
       (link) => {
@@ -102,13 +124,44 @@ export function buildSiteData(
 
   return {
     categories: dtoCategories,
-    scenes: scenes.map(toSceneDto),
+    scenes: visibleScenes.map(toSceneDto),
     searchEngines: engines.map(toSearchEngineDto),
     settings: toSiteSettingsDto(settings),
   };
 }
 
 // ─── Scenes ──────────────────────────────────────────────────────────────────
+
+/**
+ * 未登录视角下某个场景是否可见：只有 `visibility = 'public'` 的场景存在。
+ * 库/行上缺值（更早的库或手写行）按公开处理——与列的 `DEFAULT 'public'` 同口径。
+ */
+function isPublicScene(scene: Scene): boolean {
+  return scene.visibility !== "private";
+}
+
+/** 未登录视角可见的场景（保持原有 sort_order, created_at 顺序）。 */
+function publicScenes(scenes: Scene[]): Scene[] {
+  return scenes.filter(isPublicScene);
+}
+
+/**
+ * 未登录视角可见的分类：场景公开 AND 分类公开（两层取与）。私有场景下的分类
+ * 无论自身标记都不出现；NULL/悬空 scene_id 先归一化为默认场景再判可见性。
+ */
+export function publicCategories(
+  categories: Category[],
+  scenes: Scene[],
+): Category[] {
+  const visibleSceneIds = new Set(
+    publicScenes(scenes).map((scene) => scene.id),
+  );
+  return categories.filter(
+    (category) =>
+      category.visibility === "public" &&
+      visibleSceneIds.has(normalizeSceneId(category.scene_id, scenes)),
+  );
+}
 
 export function toSceneDto(scene: Scene): SceneDto {
   return {
@@ -117,6 +170,7 @@ export function toSceneDto(scene: Scene): SceneDto {
     icon: scene.icon,
     sortOrder: scene.sort_order,
     isDefault: scene.is_default === 1,
+    visibility: scene.visibility === "private" ? "private" : "public",
   };
 }
 

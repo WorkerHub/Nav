@@ -20,14 +20,31 @@
 - 分类的 `sort_order` 表示**场景内**排序；链接保持原有全局排序语义不变。
 - 默认场景只认 `is_default = 1`，不按 id 或名字「通用」查找；`is_default` 只读，API 不提供转移默认场景的能力。
 - 搜索引擎不属于任何场景，全场景共用；`visibility` 逻辑完全不变。
-- `/api/public`、`/api/private` 返回全部场景，以及各场景下按既有可见性规则可见的分类；服务端不按场景裁剪，场景切换由客户端本地过滤。
-- DTO 形状：`SceneDto{id,name,icon,sortOrder,isDefault}`；后台场景额外返回 `AdminSceneDto = SceneDto + {createdAt,updatedAt}`；分类 DTO 增加 `sceneId`。
+- `/api/public`、`/api/private` 返回可见场景（口径见下节「场景可见性」），以及各场景下按既有可见性规则可见的分类；除可见性层外，服务端不按场景切换裁剪，场景切换由客户端本地过滤。
+- DTO 形状：`SceneDto{id,name,icon,sortOrder,isDefault,visibility}`；后台场景额外返回 `AdminSceneDto = SceneDto + {createdAt,updatedAt}`；分类 DTO 增加 `sceneId`。
+
+## 场景可见性（v1.2，nav #19 冻结契约）
+
+### 数据模型（迁移 `schema_v3`）
+
+- `{prefix}scenes` 新增 `visibility TEXT NOT NULL DEFAULT 'public' CHECK (visibility IN ('public','private'))`，与分类同名属性同口径。
+- 存量行由列默认值取 `public`（含种子默认场景），因此升级后的默认场景仍是公开的。
+- 迁移只增不删、由账本保证只执行一次；`ADD COLUMN` 无 `IF NOT EXISTS`，重放安全与 `schema_v2` 的 `categories.scene_id` 同口径（账本已记录即跳过，绝不重复 `ALTER`）。表名随 `TABLE_PREFIX` 三态变化。
+
+### 语义（两层取与）
+
+- 有效可见性 = **场景公开 AND 分类公开**。私有场景整个空间对外不存在：场景本身、它下面的全部分类（无论分类自身标记）、以及这些分类下的链接，都不进入未登录可见数据。
+- 分类自身 `visibility` 保留不动，不做级联改写；公开场景内继续按分类自身 `visibility` 过滤；链接没有独立可见性，跟随分类。
+- 登录（所有者）视角全量可见：`/api/private` 返回全部场景（场景 DTO 带 `visibility` 与 `isDefault`）与全部分类；分类 DTO 形状不变（没有 `visibility`/`isDefault`，前端靠「全量里有、公开列表里没有」判断私有）。
+- 未登录数据里不得出现私有场景的名称、图标、id 等任何字段（图标注册表 `GET /api/icon` 同口径）。
+- 私有场景不得被设为默认：设默认操作遇私有 → 400 `{"error":…}`；默认场景不得改为私有：更新 `visibility` 若当前为默认且目标 `private` → 400，须先移默认。`isDefault` 机制沿用 v1.1，本版不动。
+- 删场景时分类迁入默认场景的既有流程不受影响：分类私有标记保留，由上面的取与规则保证不外露。
 
 ## 公开
 
 ### GET /api/public
 
-200 JSON。只含 `visibility=public` 的分类与链接（分类内嵌其公开链接）；私有分类、私有链接、以及「private 分类下的 public 链接」（可见性取更严一方）完全不出现。响应 `Cache-Control: public, max-age=60`。
+200 JSON。有效可见性 = 场景公开 AND 分类公开（两层取与，见「场景可见性」）：只含公开场景、公开分类与公开链接（分类内嵌其公开链接）；私有场景、私有分类、私有链接、以及「private 分类下的 public 链接」完全不出现。响应 `Cache-Control: public, max-age=60`。
 
 ```json
 {
@@ -57,7 +74,8 @@
       "name": "通用",
       "icon": null,
       "sortOrder": 0,
-      "isDefault": true
+      "isDefault": true,
+      "visibility": "public"
     }
   ],
   "searchEngines": [
@@ -81,7 +99,7 @@
 }
 ```
 
-`scenes`：全部场景，按 `sortOrder, createdAt` 排序，**包含只有私有分类的场景**（场景本身没有 visibility；私有分类与链接仍按原可见性规则不出现）。`/api/private` 与 `/api/public` 同结构，两者都返回全量场景，服务端不按场景裁剪；分类的 `sceneId` 为该分类所属场景，`NULL`/悬空 id 会归一化为默认场景 id。
+`scenes`：按 `sortOrder, createdAt` 排序。`/api/public` **只含 `visibility = 'public'` 的场景**（私有场景整个空间对外不存在：场景、其下分类与链接都不出现）；`/api/private` 返回全量场景。两者都包含「只有私有分类的公开场景」。分类的 `sceneId` 为该分类所属场景，`NULL`/悬空 id 会归一化为默认场景 id。
 
 `wallpaperSource`：首页壁纸来源，`bing`（默认，Bing 每日壁纸）| `custom`（用 `backgroundUrl` 自定义图）。存量库无此键时按 `bing` 返回。
 
@@ -97,7 +115,7 @@
 worker 端图标解析器：服务端读目标站 HTML 的 `<link rel="icon">` 声明、探测根文件，抓到后缓存并**直接回图字节**。无鉴权（公共页未登录也要显示图标）。前端在 `iconUrl` 非空时直接用它、不请求本端点；首字圆仍是最终兜底。
 - 入参 `url`：必填，`encodeURIComponent` 后的绝对 URL（链接的 `url` 或搜索引擎 `urlTemplate` 去掉 `{q}`）。服务端只用它的 host 与 scheme，**不使用 path/query**。
 - 缺失/非法（非 http/https、带账号密码、非默认端口、**内网/回环/保留地址**）→ `400 {"error":"url must be an absolute http(s) URL"}`，`Cache-Control: no-store` —— 这类目标在参数校验阶段就被拒，不进注册表。
-- **站点注册表**：host 必须已登记在本站数据里 —— 公开链接与搜索引擎的 host 匿名可取；链接的可见性取**更严一方**（私有链接、或私有分类下的 public 链接，都需要有效会话），否则按未登记处理。未登记 → `404 {"error":"icon not found"}`，`Cache-Control: public, max-age=3600`，**不发起任何外部请求**（本端点不是开放代理）。同一 host 有多条链接时注册表优先 https。
+- **站点注册表**：host 必须已登记在本站数据里 —— 公开链接与搜索引擎的 host 匿名可取；链接的可见性取**更严一方**（私有链接、或私有分类/私有场景下的 public 链接，都需要有效会话），否则按未登记处理。未登记 → `404 {"error":"icon not found"}`，`Cache-Control: public, max-age=3600`，**不发起任何外部请求**（本端点不是开放代理）。同一 host 有多条链接时注册表优先 https。
 - **解析顺序**（全部限定在登记的 origin）：`GET https://{host}/` 读 HTML 里 `rel` 含 `icon` / `apple-touch-icon` 的 `<link>`（svg > png > ico，`sizes` 大者优先；相对路径按该 HTML 的真实地址解，含跟随重定向后的路径；声明落在其他 host 的一律忽略）→ 命中即取该图 → 否则依次探测 `/favicon.ico`、`/favicon.svg`、`/favicon.png`、`/apple-touch-icon.png` → 全失败记为「无图」。
 - **出网约束**：只请求上述 origin 的根路径与固定根文件；`redirect: "manual"` 自己管重定向 —— **只跟随同一个 host 内的 3xx（最多 2 跳；允许 http→https 升级，禁止降级到 http）**，`Location` 落到别的 host（含子域、CDN）、非默认端口、带账号密码、解析失败或超出跳数，一律视为该候选失败（不扩大出网边界）；单次 5s 超时、一次解析总预算 8s；HTML 读 256KB、图标读 512KB 上限；带 `user-agent: nav-favicon/1`。
 - 成功 `200`：图标原始字节，`content-type` 为按魔数嗅探出的真实类型（`image/png` / `image/jpeg` / `image/webp` / `image/gif` / `image/svg+xml` / `image/x-icon`），`cache-control: public, max-age=86400`，`x-content-type-options: nosniff`；**不透传任何上游响应头**。
@@ -146,12 +164,14 @@ Passkey（WebAuthn，/api/auth/passkey/*，@simplewebauthn/server v14）：
 
 ### 场景
 
-- `GET /api/admin/scenes` → `{scenes:[AdminSceneDto]}`（按 `sortOrder, createdAt` 排序，含默认场景）
-- `POST /api/admin/scenes` body `{name, icon?, sortOrder?}` → 201 `AdminSceneDto`
+- `GET /api/admin/scenes` → `{scenes:[AdminSceneDto]}`（按 `sortOrder, createdAt` 排序，含默认场景，每项带 `visibility`/`isDefault`）
+- `POST /api/admin/scenes` body `{name, icon?, sortOrder?, visibility?}` → 201 `AdminSceneDto`
   - `name` 去空格后不可为空，否则 400 `{"error":"name is required"}`；`icon` 非字符串按 `null`；省略 `sortOrder` 时追加到末尾（现有 `MAX(sort_order)+1`）。
-  - `isDefault` 只读，传入会被忽略；场景名不做库级唯一约束。
-- `PUT /api/admin/scenes/:id` body `{name?, icon?, sortOrder?}` → 更新后的 `AdminSceneDto`
+  - `visibility`：`public`（缺省）| `private`，其他值 → 400 `{"error":"visibility must be 'public' or 'private'"}`。
+  - `isDefault` 只读，传入会被忽略；场景名不做库级唯一约束。例外：`isDefault: true` 与 `visibility: 'private'` 同时出现 → 400 `{"error":"private scene cannot be set as default"}`（私有场景不得为默认）。
+- `PUT /api/admin/scenes/:id` body `{name?, icon?, sortOrder?, visibility?}` → 更新后的 `AdminSceneDto`
   - `name` 去空格后不可为空，否则 400 `{"error":"name must not be empty"}`；`isDefault` 静默忽略；不存在 → 404 `{"error":"not found"}`。
+  - `visibility` 非法值 → 400 `visibility must be 'public' or 'private'`；当前是默认场景而目标 `private` → 400 `{"error":"default scene cannot be private"}`（须先移默认；被拒时整个更新不落库）。私有场景上请求 `isDefault: true` → 400 `private scene cannot be set as default`。
 - `DELETE /api/admin/scenes/:id` → `{success:true}`
   - 默认场景 → 400 `{"error":"default scene cannot be deleted"}`；不存在 → 404 `{"error":"not found"}`。
   - 非默认场景：在**单个 `db.batch` 事务**里，先把该场景的全部分类移动到默认场景，`sort_order` 追加到默认场景现有分类之后（以默认场景内 `MAX(sort_order)+1` 为基数，保持分类相对顺序），再删除场景（SQL 层带 `is_default = 0` 守卫）；链接随分类走，不搬不改。
