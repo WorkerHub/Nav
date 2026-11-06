@@ -54,10 +54,15 @@ describe("ledgered migration runner", () => {
     expect(result.migrations.map((m) => [m.name, m.status])).toEqual([
       ["schema_v1", "applied"],
       ["schema_v2", "applied"],
+      ["schema_v3", "applied"],
     ]);
 
     const ledger = ledgerRows(env.DB, "nav_");
-    expect(ledger.map((row) => row.name)).toEqual(["schema_v1", "schema_v2"]);
+    expect(ledger.map((row) => row.name)).toEqual([
+      "schema_v1",
+      "schema_v2",
+      "schema_v3",
+    ]);
     expect(ledger[0]?.applied_at).toBeGreaterThan(0);
 
     const tables = tableNames(env.DB);
@@ -94,6 +99,7 @@ describe("ledgered migration runner", () => {
     expect(second.migrations).toEqual([
       { name: "schema_v1", status: "skipped" },
       { name: "schema_v2", status: "skipped" },
+      { name: "schema_v3", status: "skipped" },
     ]);
 
     expect(tableNames(env.DB)).toEqual(schemaBefore);
@@ -116,6 +122,7 @@ describe("ledgered migration runner", () => {
     expect(ledgerRows(env.DB, "").map((row) => row.name)).toEqual([
       "schema_v1",
       "schema_v2",
+      "schema_v3",
     ]);
   });
 
@@ -133,10 +140,12 @@ describe("ledgered migration runner", () => {
     expect(result.migrations).toEqual([
       { name: "schema_v1", status: "applied" },
       { name: "schema_v2", status: "applied" },
+      { name: "schema_v3", status: "applied" },
     ]);
     expect(ledgerRows(env.DB, "nav_").map((row) => row.name)).toEqual([
       "schema_v1",
       "schema_v2",
+      "schema_v3",
     ]);
     expect(tableNames(env.DB)).toContain("_nav_schema_migrations");
     expect(tableNames(env.DB)).toContain("nav_scenes");
@@ -185,10 +194,12 @@ describe("ledgered migration runner", () => {
 
     const result = await runMigrations(env);
     expect(result.prefix).toBe("nav_");
-    expect(result.migrations).toEqual([
-      { name: "schema_v1", status: "applied" },
-      { name: "schema_v2", status: "applied" },
+    expect(result.migrations.map((m) => m.name)).toEqual([
+      "schema_v1",
+      "schema_v2",
+      "schema_v3",
     ]);
+    expect(result.migrations.every((m) => m.status === "applied")).toBe(true);
   });
 
   it("stops at the first failing migration, without recording it or running later ones", async () => {

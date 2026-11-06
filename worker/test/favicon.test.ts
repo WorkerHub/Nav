@@ -391,6 +391,37 @@ describe("loadIconRegistry", () => {
     });
   });
 
+  it("私有场景下的链接对匿名不算登记（两层取与）", async () => {
+    const now = new Date().toISOString();
+    sql(env)
+      .prepare(
+        "INSERT INTO scenes (id, name, icon, sort_order, is_default, visibility, created_at, updated_at) VALUES ('scene_secret', '秘密', NULL, 9, 0, 'private', ?, ?)",
+      )
+      .run(now, now);
+    sql(env)
+      .prepare(
+        "INSERT INTO categories (id, name, icon, sort_order, visibility, scene_id, created_at, updated_at) VALUES ('cat-secret', '秘密分类', NULL, 0, 'public', 'scene_secret', ?, ?)",
+      )
+      .run(now, now);
+    sql(env)
+      .prepare(
+        "INSERT INTO links (id, category_id, title, url, icon_url, description, sort_order, visibility, created_at, updated_at) VALUES ('l-secret', 'cat-secret', 't', 'https://hidden-scene.example/', NULL, NULL, 0, 'public', ?, ?)",
+      )
+      .run(now, now);
+
+    const anonymous = await loadIconRegistry(env, getTablePrefix(env), {
+      includePrivate: false,
+    });
+    expect(anonymous.has("hidden-scene.example")).toBe(false);
+
+    const authed = await loadIconRegistry(env, getTablePrefix(env), {
+      includePrivate: true,
+    });
+    expect(authed.get("hidden-scene.example")).toEqual({
+      origin: "https://hidden-scene.example",
+    });
+  });
+
   it("库还没初始化时退化为空注册表（不抛）", async () => {
     const fresh = makeEnv();
     const registry = await loadIconRegistry(fresh, getTablePrefix(fresh), {

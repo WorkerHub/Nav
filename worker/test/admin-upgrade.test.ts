@@ -68,13 +68,13 @@ describe("admin upgrade path (schema_v1-only database)", () => {
       expect.objectContaining({ id: "legacy-cat", sceneId: "scene_default" }),
     ]);
 
-    // The guard applied schema_v2 and backfilled the legacy row.
+    // The guard applied schema_v2 (+ schema_v3) and backfilled the legacy row.
     expect(
       db
         .prepare(`SELECT name FROM ${migrationsTable("")} ORDER BY rowid`)
         .all()
         .map((row: { name: string }) => row.name),
-    ).toEqual(["schema_v1", "schema_v2"]);
+    ).toEqual(["schema_v1", "schema_v2", "schema_v3"]);
     expect(
       db
         .prepare("SELECT scene_id FROM categories WHERE id = 'legacy-cat'")

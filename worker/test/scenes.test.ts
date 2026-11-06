@@ -77,19 +77,23 @@ function insertSceneRow(
   scene: {
     id: string;
     name: string;
+    icon?: string | null;
     sortOrder: number;
     isDefault?: boolean;
+    visibility?: "public" | "private";
   },
 ): void {
   sqliteOf(env)
     .prepare(
-      "INSERT INTO scenes (id, name, icon, sort_order, is_default, created_at, updated_at) VALUES (?, ?, NULL, ?, ?, ?, ?)",
+      "INSERT INTO scenes (id, name, icon, sort_order, is_default, visibility, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .run(
       scene.id,
       scene.name,
+      scene.icon ?? null,
       scene.sortOrder,
       scene.isDefault ? 1 : 0,
+      scene.visibility ?? "public",
       NOW,
       NOW,
     );
@@ -161,6 +165,7 @@ describe("schema_v2 migration (scenes)", () => {
     expect(result.migrations).toEqual([
       { name: "schema_v1", status: "skipped" },
       { name: "schema_v2", status: "applied" },
+      { name: "schema_v3", status: "applied" },
     ]);
 
     const scenes = sqliteOf(env).prepare("SELECT * FROM scenes").all() as Array<
@@ -225,6 +230,87 @@ describe("schema_v2 migration (scenes)", () => {
         )
         .run(NOW, NOW),
     ).toThrow();
+  });
+});
+
+describe("schema_v3 migration (scene visibility)", () => {
+  it("adds scenes.visibility with a public default and backfills existing rows", async () => {
+    const env = makeEnv();
+    // A schema_v2 database: v1 + v2 applied, scenes exist, no visibility column.
+    const [v1, v2] = getMigrations("");
+    if (!v1 || !v2) throw new Error("schema_v1/v2 missing");
+    await applyMigrationList(env.DB, "", [v1, v2]);
+    // schema_v2-era row: the table has no visibility column yet.
+    sqliteOf(env)
+      .prepare(
+        "INSERT INTO scenes (id, name, icon, sort_order, is_default, created_at, updated_at) VALUES ('old-work', '旧场景', NULL, 1, 0, ?, ?)",
+      )
+      .run(NOW, NOW);
+
+    const result = await runMigrations(env);
+    expect(result.migrations).toEqual([
+      { name: "schema_v1", status: "skipped" },
+      { name: "schema_v2", status: "skipped" },
+      { name: "schema_v3", status: "applied" },
+    ]);
+
+    // Every pre-existing row — including the seeded default scene — is public.
+    expect(
+      sqliteOf(env)
+        .prepare("SELECT id, visibility FROM scenes ORDER BY id")
+        .all(),
+    ).toEqual([
+      { id: "old-work", visibility: "public" },
+      { id: "scene_default", visibility: "public" },
+    ]);
+
+    // New rows fall back to the column default too.
+    insertSceneRow(env, { id: "fresh", name: "新场景", sortOrder: 2 });
+    expect(
+      sqliteOf(env)
+        .prepare("SELECT visibility FROM scenes WHERE id = 'fresh'")
+        .get(),
+    ).toEqual({ visibility: "public" });
+  });
+
+  it("enforces the public/private domain at the database level", async () => {
+    const env = makeEnv();
+    await runMigrations(env);
+    expect(() =>
+      sqliteOf(env)
+        .prepare(
+          "INSERT INTO scenes (id, name, icon, sort_order, is_default, visibility, created_at, updated_at) VALUES ('bad', 'x', NULL, 1, 0, 'hidden', ?, ?)",
+        )
+        .run(NOW, NOW),
+    ).toThrow();
+  });
+
+  it("is replay-safe and keeps the TABLE_PREFIX three-state naming", async () => {
+    const env = makeEnv({ TABLE_PREFIX: "nav_" });
+    await runMigrations(env);
+    // Ledger replay: the ALTER is not attempted twice.
+    await expect(runMigrations(env)).resolves.toEqual({
+      prefix: "nav_",
+      migrations: [
+        { name: "schema_v1", status: "skipped" },
+        { name: "schema_v2", status: "skipped" },
+        { name: "schema_v3", status: "skipped" },
+      ],
+    });
+    expect(
+      sqliteOf(env)
+        .prepare("SELECT visibility FROM nav_scenes WHERE id = 'scene_default'")
+        .get(),
+    ).toEqual({ visibility: "public" });
+
+    // Explicitly empty prefix builds the same column with no prefix at all.
+    const bare = makeEnv({ TABLE_PREFIX: "" });
+    await runMigrations(bare);
+    expect(
+      sqliteOf(bare)
+        .prepare("SELECT visibility FROM scenes WHERE id = 'scene_default'")
+        .get(),
+    ).toEqual({ visibility: "public" });
   });
 });
 
@@ -303,6 +389,7 @@ describe("site data DTOs carry scenes + category sceneId", () => {
         icon: null,
         sortOrder: 0,
         isDefault: true,
+        visibility: "public",
       },
       {
         id: "scene_work",
@@ -310,6 +397,7 @@ describe("site data DTOs carry scenes + category sceneId", () => {
         icon: null,
         sortOrder: 1,
         isDefault: false,
+        visibility: "public",
       },
       {
         id: "scene_private",
@@ -317,6 +405,7 @@ describe("site data DTOs carry scenes + category sceneId", () => {
         icon: null,
         sortOrder: 2,
         isDefault: false,
+        visibility: "public",
       },
     ]);
 
@@ -369,6 +458,145 @@ describe("site data DTOs carry scenes + category sceneId", () => {
     expect(byId["cat-work"]).toBe("scene_work");
     expect(byId["cat-legacy"]).toBe("scene_default");
     expect(byId["cat-dangling"]).toBe("scene_default");
+  });
+});
+
+describe("scene visibility: private scene space is invisible when logged out", () => {
+  let env: Env;
+  let app: Hono;
+  let cookie: string;
+
+  beforeEach(async () => {
+    env = makeEnv();
+    app = makeApp();
+    await runMigrations(env);
+    cookie = await ownerCookie(app, env);
+
+    insertSceneRow(env, {
+      id: "scene_open",
+      name: "公开场景",
+      sortOrder: 1,
+    });
+    insertSceneRow(env, {
+      id: "scene_secret",
+      name: "秘密场景",
+      icon: "secret-icon.svg",
+      sortOrder: 2,
+      visibility: "private",
+    });
+
+    // 公开场景：公开分类 + 私有分类（继续按分类自身 visibility 过滤）
+    insertCategoryRow(env, {
+      id: "cat-open",
+      name: "公开分类",
+      sortOrder: 0,
+      sceneId: "scene_open",
+    });
+    insertCategoryRow(env, {
+      id: "cat-open-private",
+      name: "公开场景里的私有分类",
+      sortOrder: 1,
+      sceneId: "scene_open",
+      visibility: "private",
+    });
+    // 私有场景：无论分类自身标记，整条都不外露
+    insertCategoryRow(env, {
+      id: "cat-secret-public",
+      name: "私有场景里的公开分类",
+      sortOrder: 0,
+      sceneId: "scene_secret",
+    });
+    insertCategoryRow(env, {
+      id: "cat-secret-private",
+      name: "私有场景里的私有分类",
+      sortOrder: 1,
+      sceneId: "scene_secret",
+      visibility: "private",
+    });
+
+    insertLinkRow(env, { id: "link-open", categoryId: "cat-open" });
+    insertLinkRow(env, { id: "link-secret", categoryId: "cat-secret-public" });
+    insertLinkRow(env, {
+      id: "link-secret-private",
+      categoryId: "cat-secret-private",
+      visibility: "private",
+    });
+  });
+
+  it("GET /api/public drops the private scene, its categories and their links", async () => {
+    const res = await app.request("/api/public", {}, env);
+    expect(res.status).toBe(200);
+    const body = await readJson(res);
+    const raw = JSON.stringify(body);
+
+    // 场景出口只剩公开场景，且带 visibility: public
+    expect(body.scenes.map((scene: { id: string }) => scene.id)).toEqual([
+      "scene_default",
+      "scene_open",
+    ]);
+    expect(body.scenes[1]).toEqual({
+      id: "scene_open",
+      name: "公开场景",
+      icon: null,
+      sortOrder: 1,
+      isDefault: false,
+      visibility: "public",
+    });
+
+    // 分类：私有场景下的分类（含公开标记）与公开场景里的私有分类都不出现
+    expect(body.categories.map((cat: { id: string }) => cat.id)).toEqual([
+      "cat-open",
+    ]);
+    expect(
+      body.categories[0].links.map((link: { id: string }) => link.id),
+    ).toEqual(["link-open"]);
+
+    // 私有场景的任何字段（名称/图标/id）都不得出现
+    expect(raw).not.toContain("秘密场景");
+    expect(raw).not.toContain("secret-icon");
+    expect(raw).not.toContain("scene_secret");
+    expect(raw).not.toContain("私有场景里的公开分类");
+    expect(raw).not.toContain("link-secret");
+  });
+
+  it("GET /api/private keeps everything and reports each scene's visibility", async () => {
+    const res = await app.request("/api/private", { headers: { cookie } }, env);
+    const body = await readJson(res);
+    expect(
+      body.scenes.map((scene: { id: string; visibility: string }) => [
+        scene.id,
+        scene.visibility,
+      ]),
+    ).toEqual([
+      ["scene_default", "public"],
+      ["scene_open", "public"],
+      ["scene_secret", "private"],
+    ]);
+    expect(body.categories.map((cat: { id: string }) => cat.id)).toEqual([
+      "cat-open",
+      "cat-secret-public",
+      "cat-open-private",
+      "cat-secret-private",
+    ]);
+  });
+
+  it("admin GET /api/admin/scenes exposes visibility + isDefault", async () => {
+    const body = await readJson(
+      await adminRequest(app, env, cookie, "/api/admin/scenes"),
+    );
+    expect(
+      body.scenes.map(
+        (scene: { id: string; visibility: string; isDefault: boolean }) => [
+          scene.id,
+          scene.visibility,
+          scene.isDefault,
+        ],
+      ),
+    ).toEqual([
+      ["scene_default", "public", true],
+      ["scene_open", "public", false],
+      ["scene_secret", "private", false],
+    ]);
   });
 });
 
@@ -887,6 +1115,244 @@ describe("admin categories accept sceneId (incl. moving a category)", () => {
     expect(byId[b.id]).toBe(0);
     expect(byId[a.id]).toBe(1);
     expect(byId[other.id]).toBe(0);
+  });
+});
+
+describe("admin scene visibility + default-scene guards (B2)", () => {
+  let env: Env;
+  let app: Hono;
+  let cookie: string;
+
+  beforeEach(async () => {
+    env = makeEnv();
+    app = makeApp();
+    await runMigrations(env);
+    cookie = await ownerCookie(app, env);
+  });
+
+  function sceneRow(id: string): { visibility: string; is_default: number } {
+    return sqliteOf(env)
+      .prepare("SELECT visibility, is_default FROM scenes WHERE id = ?")
+      .get(id) as { visibility: string; is_default: number };
+  }
+
+  it("POST defaults visibility to public and accepts private", async () => {
+    const plain = await adminRequest(app, env, cookie, "/api/admin/scenes", {
+      method: "POST",
+      body: { name: "无标记" },
+    });
+    expect(plain.status).toBe(201);
+    expect(await readJson(plain)).toMatchObject({ visibility: "public" });
+
+    const priv = await adminRequest(app, env, cookie, "/api/admin/scenes", {
+      method: "POST",
+      body: { name: "私密", visibility: "private" },
+    });
+    expect(priv.status).toBe(201);
+    const created = await readJson(priv);
+    expect(created).toMatchObject({ visibility: "private", isDefault: false });
+    expect(sceneRow(created.id)).toEqual({
+      visibility: "private",
+      is_default: 0,
+    });
+  });
+
+  it("POST/PUT reject an illegal visibility with the {error} shape", async () => {
+    for (const visibility of ["hidden", "", 7, null]) {
+      const res = await adminRequest(app, env, cookie, "/api/admin/scenes", {
+        method: "POST",
+        body: { name: "x", visibility },
+      });
+      expect(res.status).toBe(400);
+      expect(await readJson(res)).toEqual({
+        error: "visibility must be 'public' or 'private'",
+      });
+    }
+
+    const created = await readJson(
+      await adminRequest(app, env, cookie, "/api/admin/scenes", {
+        method: "POST",
+        body: { name: "工作" },
+      }),
+    );
+    const res = await adminRequest(
+      app,
+      env,
+      cookie,
+      `/api/admin/scenes/${created.id}`,
+      { method: "PUT", body: { visibility: "secret" } },
+    );
+    expect(res.status).toBe(400);
+    expect(await readJson(res)).toEqual({
+      error: "visibility must be 'public' or 'private'",
+    });
+    expect(sceneRow(created.id).visibility).toBe("public");
+  });
+
+  it("PUT flips a non-default scene to private and back", async () => {
+    const created = await readJson(
+      await adminRequest(app, env, cookie, "/api/admin/scenes", {
+        method: "POST",
+        body: { name: "工作" },
+      }),
+    );
+
+    const toPrivate = await adminRequest(
+      app,
+      env,
+      cookie,
+      `/api/admin/scenes/${created.id}`,
+      { method: "PUT", body: { visibility: "private" } },
+    );
+    expect(toPrivate.status).toBe(200);
+    expect(await readJson(toPrivate)).toMatchObject({
+      id: created.id,
+      visibility: "private",
+      isDefault: false,
+    });
+
+    const toPublic = await adminRequest(
+      app,
+      env,
+      cookie,
+      `/api/admin/scenes/${created.id}`,
+      { method: "PUT", body: { visibility: "public" } },
+    );
+    expect(toPublic.status).toBe(200);
+    expect(await readJson(toPublic)).toMatchObject({ visibility: "public" });
+  });
+
+  it("PUT the default scene to private is a 400 and writes nothing", async () => {
+    const res = await adminRequest(
+      app,
+      env,
+      cookie,
+      "/api/admin/scenes/scene_default",
+      { method: "PUT", body: { visibility: "private", name: "改名也没写" } },
+    );
+    expect(res.status).toBe(400);
+    expect(await readJson(res)).toEqual({
+      error: "default scene cannot be private",
+    });
+    expect(sceneRow("scene_default")).toEqual({
+      visibility: "public",
+      is_default: 1,
+    });
+    // The whole update was rejected — not just the visibility field.
+    expect(
+      sqliteOf(env)
+        .prepare("SELECT name FROM scenes WHERE id = 'scene_default'")
+        .get(),
+    ).toEqual({ name: "通用" });
+
+    // 公开值仍然可以提交（幂等，不算变更默认场景）。
+    const stillPublic = await adminRequest(
+      app,
+      env,
+      cookie,
+      "/api/admin/scenes/scene_default",
+      { method: "PUT", body: { visibility: "public" } },
+    );
+    expect(stillPublic.status).toBe(200);
+  });
+
+  it("a private scene cannot be made the default (400, {error} shape)", async () => {
+    const priv = await readJson(
+      await adminRequest(app, env, cookie, "/api/admin/scenes", {
+        method: "POST",
+        body: { name: "私密", visibility: "private" },
+      }),
+    );
+
+    const viaPost = await adminRequest(app, env, cookie, "/api/admin/scenes", {
+      method: "POST",
+      body: { name: "又想当默认", visibility: "private", isDefault: true },
+    });
+    expect(viaPost.status).toBe(400);
+    expect(await readJson(viaPost)).toEqual({
+      error: "private scene cannot be set as default",
+    });
+    expect(
+      count(env, "SELECT COUNT(*) AS n FROM scenes WHERE name = '又想当默认'"),
+    ).toBe(0);
+
+    const viaPut = await adminRequest(
+      app,
+      env,
+      cookie,
+      `/api/admin/scenes/${priv.id}`,
+      { method: "PUT", body: { isDefault: true } },
+    );
+    expect(viaPut.status).toBe(400);
+    expect(await readJson(viaPut)).toEqual({
+      error: "private scene cannot be set as default",
+    });
+    expect(sceneRow(priv.id)).toEqual({
+      visibility: "private",
+      is_default: 0,
+    });
+    expect(
+      count(env, "SELECT COUNT(*) AS n FROM scenes WHERE is_default = 1"),
+    ).toBe(1);
+
+    // 公开场景上的 isDefault 仍按 #17 冻结契约静默忽略。
+    const publicScene = await readJson(
+      await adminRequest(app, env, cookie, "/api/admin/scenes", {
+        method: "POST",
+        body: { name: "公开" },
+      }),
+    );
+    const ignored = await adminRequest(
+      app,
+      env,
+      cookie,
+      `/api/admin/scenes/${publicScene.id}`,
+      { method: "PUT", body: { isDefault: true } },
+    );
+    expect(ignored.status).toBe(200);
+    expect(await readJson(ignored)).toMatchObject({ isDefault: false });
+  });
+
+  it("DELETE still moves a private scene's categories into the default scene", async () => {
+    const priv = await readJson(
+      await adminRequest(app, env, cookie, "/api/admin/scenes", {
+        method: "POST",
+        body: { name: "私密", visibility: "private" },
+      }),
+    );
+    insertCategoryRow(env, {
+      id: "cat-secret",
+      name: "私有场景分类",
+      sortOrder: 0,
+      sceneId: priv.id,
+      visibility: "private",
+    });
+
+    const del = await adminRequest(
+      app,
+      env,
+      cookie,
+      `/api/admin/scenes/${priv.id}`,
+      { method: "DELETE" },
+    );
+    expect(del.status).toBe(200);
+
+    // 分类迁入默认场景，自身的私有标记保留不动（由取与规则保证不外露）。
+    expect(
+      sqliteOf(env)
+        .prepare(
+          "SELECT scene_id, visibility FROM categories WHERE id = 'cat-secret'",
+        )
+        .get(),
+    ).toEqual({ scene_id: "scene_default", visibility: "private" });
+    const publicBody = await readJson(
+      await app.request("/api/public", {}, env),
+    );
+    expect(
+      publicBody.categories.some(
+        (cat: { id: string }) => cat.id === "cat-secret",
+      ),
+    ).toBe(false);
   });
 });
 
