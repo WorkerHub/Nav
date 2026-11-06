@@ -38,6 +38,11 @@ export interface SortableEntry {
   id: string;
   label: string;
   meta?: React.ReactNode;
+  /**
+   * 是否显示行尾删除按钮（默认显示）。场景管理里默认场景不可删，由条目自己声明；
+   * 仍可改名称/图标、参与排序。
+   */
+  removable?: boolean;
 }
 
 function SortableRow({
@@ -205,7 +210,11 @@ export function SortableList({
               canMoveUp={index > 0}
               canMoveDown={index < entries.length - 1}
               onEdit={onEdit ? () => onEdit(entry.id) : undefined}
-              onRemove={onRemove ? () => requestRemove(entry) : undefined}
+              onRemove={
+                onRemove && entry.removable !== false
+                  ? () => requestRemove(entry)
+                  : undefined
+              }
             />
           ))}
         </div>

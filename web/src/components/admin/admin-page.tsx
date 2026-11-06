@@ -2,6 +2,7 @@ import {
   ArrowDownUp,
   ArrowLeft,
   FolderTree,
+  Layers,
   Link as LinkIcon,
   LogOut,
   Search,
@@ -11,6 +12,7 @@ import {
 } from "lucide-react";
 import * as React from "react";
 import { CategoryPanel, LinkPanel } from "@/components/admin/crud-panels";
+import { ScenePanel } from "@/components/admin/scene-panel";
 import { SecurityPanel } from "@/components/admin/security-panel";
 import {
   ImportExportPanel,
@@ -19,11 +21,18 @@ import {
 } from "@/components/admin/settings-panels";
 import { SystemPanel } from "@/components/admin/system-panel";
 import { FadeIn, GlassCard } from "@/components/glass";
+import { SceneSwitcher } from "@/components/scene-switcher";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { WallpaperBackground } from "@/components/wallpaper-background";
 import { useNavStore } from "@/lib/nav-store";
+import {
+  filterByScene,
+  resolveAdminScene,
+  useScenePreferenceStore,
+} from "@/lib/scene-preference";
+import type { AdminScene } from "@/lib/types";
 
 /**
  * 后台（/#admin）：与公共页同一套设计语言 —— 壁纸背景 + 玻璃顶栏 + 毛玻璃左栏
@@ -42,6 +51,7 @@ import { useNavStore } from "@/lib/nav-store";
 const ADMIN_TABS = [
   { value: "categories", label: "分类", icon: FolderTree },
   { value: "links", label: "链接", icon: LinkIcon },
+  { value: "scenes", label: "场景管理", icon: Layers },
   { value: "engines", label: "搜索引擎", icon: Search },
   { value: "settings", label: "站点设置", icon: SettingsIcon },
   { value: "io", label: "导入导出", icon: ArrowDownUp },
@@ -80,6 +90,30 @@ function PanelCard({ children }: { children: React.ReactNode }) {
   );
 }
 
+/**
+ * 后台场景胶囊：「分类」「链接」两分区内容卡顶部，只有场景、没有「全部」
+ * （后台永远停在具体场景：新建分类/链接要带 sceneId）。与前台共用 `nav.scene`。
+ * 没有场景（旧后端 / 无场景概念）时不渲染。
+ */
+function AdminSceneBar({
+  scenes,
+  sceneId,
+}: {
+  scenes: AdminScene[];
+  sceneId: string | null;
+}) {
+  const setScenePreference = useScenePreferenceStore((s) => s.setRaw);
+  if (!sceneId || scenes.length === 0) return null;
+  return (
+    <SceneSwitcher
+      scenes={scenes}
+      value={sceneId}
+      onValueChange={setScenePreference}
+      ariaLabel="选择场景"
+    />
+  );
+}
+
 export function AdminPage({ onBack }: { onBack: () => void }) {
   const adminData = useNavStore((s) => s.adminData);
   const loadAdmin = useNavStore((s) => s.loadAdmin);
@@ -92,8 +126,17 @@ export function AdminPage({ onBack }: { onBack: () => void }) {
 
   const categories = adminData?.categories ?? [];
   const links = adminData?.links ?? [];
+  const scenes = adminData?.scenes ?? [];
   const engines = adminData?.searchEngines ?? [];
   const settings = adminData?.settings ?? null;
+
+  // 场景偏好与前台共用同一个键；后台回落默认场景（不回写 localStorage）
+  const scenePreference = useScenePreferenceStore((s) => s.raw);
+  const activeScene = resolveAdminScene(scenePreference, scenes);
+  // 分类/链接面板只看当前场景；无场景概念时保持现状（全量）
+  const sceneCategories = activeScene
+    ? filterByScene(categories, activeScene)
+    : categories;
 
   return (
     <div className="relative min-h-screen">
@@ -187,18 +230,34 @@ export function AdminPage({ onBack }: { onBack: () => void }) {
             <div className="min-w-0 flex-1">
               <TabsContent value="categories">
                 <PanelCard>
-                  <CategoryPanel
-                    categories={categories}
-                    onChanged={() => void loadAdmin()}
-                  />
+                  <div className="flex flex-col gap-5">
+                    <AdminSceneBar scenes={scenes} sceneId={activeScene} />
+                    <CategoryPanel
+                      categories={sceneCategories}
+                      sceneId={activeScene}
+                      onChanged={() => void loadAdmin()}
+                    />
+                  </div>
                 </PanelCard>
               </TabsContent>
 
               <TabsContent value="links">
                 <PanelCard>
-                  <LinkPanel
-                    categories={categories}
-                    links={links}
+                  <div className="flex flex-col gap-5">
+                    <AdminSceneBar scenes={scenes} sceneId={activeScene} />
+                    <LinkPanel
+                      categories={sceneCategories}
+                      links={links}
+                      onChanged={() => void loadAdmin()}
+                    />
+                  </div>
+                </PanelCard>
+              </TabsContent>
+
+              <TabsContent value="scenes">
+                <PanelCard>
+                  <ScenePanel
+                    scenes={scenes}
                     onChanged={() => void loadAdmin()}
                   />
                 </PanelCard>

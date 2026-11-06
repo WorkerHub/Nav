@@ -4,10 +4,16 @@ import {
   adminReorderCategories,
   adminReorderEngines,
   adminReorderLinks,
+  adminReorderScenes,
   type AdminData,
 } from "@/lib/api";
 import { resetAdminOrderState, useNavStore } from "@/lib/nav-store";
-import type { AdminCategory, AdminLink, SearchEngine } from "@/lib/types";
+import type {
+  AdminCategory,
+  AdminLink,
+  AdminScene,
+  SearchEngine,
+} from "@/lib/types";
 import { deferred } from "./deferred";
 
 // store 层排序：只 mock 重拉与三个 reorder 请求，其余 api 保留真实实现。
@@ -19,6 +25,7 @@ vi.mock("@/lib/api", async (importOriginal) => {
     adminReorderCategories: vi.fn(),
     adminReorderLinks: vi.fn(),
     adminReorderEngines: vi.fn(),
+    adminReorderScenes: vi.fn(),
   };
 });
 
@@ -26,6 +33,7 @@ const listAllMock = vi.mocked(adminListAll);
 const reorderCategoriesMock = vi.mocked(adminReorderCategories);
 const reorderLinksMock = vi.mocked(adminReorderLinks);
 const reorderEnginesMock = vi.mocked(adminReorderEngines);
+const reorderScenesMock = vi.mocked(adminReorderScenes);
 
 const stamp = "2026-11-06T00:00:00.000Z";
 
@@ -34,6 +42,7 @@ function category(id: string, name: string, sortOrder: number): AdminCategory {
     id,
     name,
     icon: null,
+    sceneId: "scene_default",
     sortOrder,
     visibility: "public",
     createdAt: stamp,
@@ -61,6 +70,23 @@ function link(
   };
 }
 
+function scene(
+  id: string,
+  name: string,
+  sortOrder: number,
+  isDefault: boolean,
+): AdminScene {
+  return {
+    id,
+    name,
+    icon: null,
+    sortOrder,
+    isDefault,
+    createdAt: stamp,
+    updatedAt: stamp,
+  };
+}
+
 function engine(id: string, name: string, sortOrder: number): SearchEngine {
   return {
     id,
@@ -75,6 +101,7 @@ function engine(id: string, name: string, sortOrder: number): SearchEngine {
 /** 三个实体都按 sortOrder 0..n-1 排好的「服务端数据」。 */
 function makeAdminData(): AdminData {
   return {
+    scenes: [],
     categories: [
       category("c1", "开发", 0),
       category("c2", "阅读", 1),
@@ -121,9 +148,11 @@ beforeEach(() => {
   reorderCategoriesMock.mockReset();
   reorderLinksMock.mockReset();
   reorderEnginesMock.mockReset();
+  reorderScenesMock.mockReset();
   reorderCategoriesMock.mockResolvedValue(undefined);
   reorderLinksMock.mockResolvedValue(undefined);
   reorderEnginesMock.mockResolvedValue(undefined);
+  reorderScenesMock.mockResolvedValue(undefined);
   seed();
 });
 
@@ -445,5 +474,41 @@ describe("loadAdmin 投影：旧响应不覆盖本地顺序", () => {
     await useNavStore.getState().loadAdmin();
 
     expect(ids(adminData().categories)).toEqual(["c1", "c2", "c3"]);
+  });
+});
+
+describe("场景维度：分类排序按场景作用域提交", () => {
+  it("只排当前场景：成功后不补发整表，别场景的分类原地不动", async () => {
+    seed({
+      ...makeAdminData(),
+      categories: [
+        { ...category("c1", "开发", 0), sceneId: "s_a" },
+        { ...category("c2", "阅读", 1), sceneId: "s_b" },
+        { ...category("c3", "日常", 2), sceneId: "s_a" },
+      ],
+    });
+
+    await useNavStore.getState().reorderCategories(["c3", "c1"]);
+
+    // 只发一次（若拿全量分类做补发比较，这里会多出一次全量 ids 请求）
+    expect(reorderCategoriesMock).toHaveBeenCalledTimes(1);
+    expect(reorderCategoriesMock).toHaveBeenCalledWith(["c3", "c1"]);
+    // 场景内顺序已换；场景 B 的「阅读」保持原位
+    expect(ids(adminData().categories)).toEqual(["c3", "c2", "c1"]);
+  });
+
+  it("场景排序：全局顺序乐观应用并发送", async () => {
+    seed({
+      ...makeAdminData(),
+      scenes: [scene("s_a", "工作", 0, false), scene("s_b", "通用", 1, true)],
+    });
+
+    const done = useNavStore.getState().reorderScenes(["s_b", "s_a"]);
+    expect(ids(adminData().scenes)).toEqual(["s_b", "s_a"]);
+    expect(orders(adminData().scenes)).toEqual([0, 1]);
+    expect(reorderScenesMock).toHaveBeenCalledWith(["s_b", "s_a"]);
+
+    await done;
+    expect(listAllMock).not.toHaveBeenCalled();
   });
 });

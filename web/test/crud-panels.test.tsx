@@ -80,6 +80,7 @@ const category: AdminCategory = {
   id: "c1",
   name: "开发",
   icon: null,
+  sceneId: "scene_default",
   sortOrder: 0,
   visibility: "public",
   createdAt: stamp,
@@ -141,6 +142,7 @@ function EngineHarness({ onChanged }: { onChanged: () => void }) {
 }
 
 const adminBase: AdminData = {
+  scenes: [],
   categories: [category, { ...category, id: "c2", name: "阅读", sortOrder: 1 }],
   links: [
     link,

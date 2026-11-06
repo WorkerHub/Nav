@@ -13,6 +13,19 @@ export type Visibility = "public" | "private";
 
 // ─── 站点数据（/api/public、/api/private）─────────────────────────────────────
 
+/**
+ * 场景（与分类正交的组织维度，冻结契约 #16 §四）：
+ * 默认场景 `isDefault === true`，不可删；场景顺序由 `sortOrder` 决定，默认场景不特判。
+ * 形状与后台共用（后台 DTO 另带时间戳，见 AdminScene）。
+ */
+export interface Scene {
+  id: string;
+  name: string;
+  icon: string | null;
+  sortOrder: number;
+  isDefault: boolean;
+}
+
 export interface SiteLink {
   id: string;
   categoryId: string;
@@ -27,6 +40,8 @@ export interface SiteCategory {
   id: string;
   name: string;
   icon: string | null;
+  /** 所属场景 id：链接不加场景字段，其场景由分类唯一决定 */
+  sceneId: string;
   sortOrder: number;
   links: SiteLink[];
 }
@@ -56,6 +71,12 @@ export interface SiteSettings {
 
 export interface SiteData {
   categories: SiteCategory[];
+  /**
+   * 全部场景（默认场景是普通成员，位置由 sortOrder 决定）。
+   * 契约必填；读侧仍按「缺失 = 无场景概念」兜底（旧后端 / 浏览器里的旧缓存），
+   * 见 lib/scene-preference.ts。
+   */
+  scenes: Scene[];
   searchEngines: SearchEngine[];
   settings: SiteSettings;
 }
@@ -69,8 +90,16 @@ export interface AdminCategory {
   id: string;
   name: string;
   icon: string | null;
+  /** 所属场景 id（PUT 改它即「整分类移入另一场景」，链接随分类走） */
+  sceneId: string;
   sortOrder: number;
   visibility: Visibility;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** 后台场景 DTO：场景字段 + 时间戳 */
+export interface AdminScene extends Scene {
   createdAt: string;
   updatedAt: string;
 }

@@ -9,6 +9,7 @@
 import type {
   AdminCategory,
   AdminLink,
+  AdminScene,
   PrivateData,
   PublicData,
   SearchEngine,
@@ -23,10 +24,32 @@ const uid = () => Math.random().toString(36).slice(2, 10);
 const now = () => new Date().toISOString();
 
 interface MockState {
+  scenes: AdminScene[];
   categories: AdminCategory[];
   links: AdminLink[];
   searchEngines: SearchEngine[];
   settings: SiteSettings;
+}
+
+/** mock 的默认场景 id：与真实迁移（schema_v2）种子行一致，便于对照契约 */
+const DEFAULT_SCENE_ID = "scene_default";
+
+function makeScene(
+  id: string,
+  name: string,
+  sort: number,
+  isDefault: boolean,
+  icon: string | null = null,
+): AdminScene {
+  return {
+    id,
+    name,
+    icon,
+    sortOrder: sort,
+    isDefault,
+    createdAt: now(),
+    updatedAt: now(),
+  };
 }
 
 function makeLink(
@@ -53,6 +76,9 @@ function makeLink(
 }
 
 function seed(): MockState {
+  // 契约：默认有且仅有一个内置场景「通用」，不预置工作/生活等
+  const scenes = [makeScene(DEFAULT_SCENE_ID, "通用", 0, true)];
+
   const cat = (
     name: string,
     sort: number,
@@ -61,6 +87,7 @@ function seed(): MockState {
     id: uid(),
     name,
     icon: null,
+    sceneId: DEFAULT_SCENE_ID,
     sortOrder: sort,
     visibility,
     createdAt: now(),
@@ -108,6 +135,7 @@ function seed(): MockState {
   ];
 
   return {
+    scenes,
     categories: [dev, daily, reading, selfhost],
     links,
     searchEngines: [
@@ -171,6 +199,17 @@ function load(): MockState {
       };
       // 站点主题已删除：旧 mock 库存下的 theme 行不再属于契约，读入时丢掉（不迁移数据）
       delete state.settings.theme;
+      // 旧 mock 库没有场景维度：补一个默认场景并把存量分类归进去，
+      // 与真实迁移 schema_v2 的回填口径一致（不丢数据、不预置额外场景）
+      if (!Array.isArray(state.scenes) || state.scenes.length === 0) {
+        state.scenes = [makeScene(DEFAULT_SCENE_ID, "通用", 0, true)];
+      }
+      const fallbackSceneId =
+        state.scenes.find((scene) => scene.isDefault)?.id ?? state.scenes[0].id;
+      state.categories = state.categories.map((category) => ({
+        ...category,
+        sceneId: category.sceneId || fallbackSceneId,
+      }));
       return state as MockState;
     }
   } catch {
@@ -197,6 +236,7 @@ function toSiteData(state: MockState, includePrivate: boolean): PublicData {
       id: c.id,
       name: c.name,
       icon: c.icon,
+      sceneId: c.sceneId,
       sortOrder: c.sortOrder,
       links: state.links
         .filter(
@@ -217,6 +257,7 @@ function toSiteData(state: MockState, includePrivate: boolean): PublicData {
     }));
   return {
     categories,
+    scenes: [...state.scenes].sort(bySort),
     searchEngines: [...state.searchEngines].sort(bySort),
     settings: state.settings,
   };
@@ -266,6 +307,7 @@ export const mockDb = {
   async adminListAll() {
     const state = load();
     return {
+      scenes: [...state.scenes].sort(bySort),
       categories: [...state.categories].sort(bySort),
       links: [...state.links].sort(bySort),
       searchEngines: [...state.searchEngines].sort(bySort),
@@ -276,14 +318,18 @@ export const mockDb = {
   async createCategory(input: {
     name: string;
     icon?: string | null;
+    sceneId?: string;
     sortOrder?: number;
     visibility?: "public" | "private";
   }): Promise<AdminCategory> {
     const state = load();
+    const fallbackSceneId =
+      state.scenes.find((scene) => scene.isDefault)?.id ?? state.scenes[0].id;
     const item: AdminCategory = {
       id: uid(),
       name: input.name ?? "未命名分类",
       icon: input.icon ?? null,
+      sceneId: input.sceneId ?? fallbackSceneId,
       sortOrder: input.sortOrder ?? state.categories.length,
       visibility: input.visibility ?? "public",
       createdAt: now(),
@@ -320,6 +366,78 @@ export const mockDb = {
       if (c) {
         c.sortOrder = index;
         c.updatedAt = now();
+      }
+    });
+    persist(state);
+  },
+
+  async createScene(input: {
+    name: string;
+    icon?: string | null;
+    sortOrder?: number;
+  }): Promise<AdminScene> {
+    const state = load();
+    const item = makeScene(
+      uid(),
+      input.name ?? "新场景",
+      input.sortOrder ?? state.scenes.length,
+      false,
+      input.icon ?? null,
+    );
+    state.scenes.push(item);
+    persist(state);
+    return item;
+  },
+
+  async updateScene(
+    id: string,
+    input: { name?: string; icon?: string | null },
+  ): Promise<AdminScene> {
+    const state = load();
+    const item = state.scenes.find((scene) => scene.id === id);
+    if (!item) throw new Error("scene not found");
+    // isDefault 只读：mock 与后端同口径（忽略该字段）
+    Object.assign(item, input, { updatedAt: now() });
+    persist(state);
+    return item;
+  },
+
+  async deleteScene(id: string): Promise<void> {
+    const state = load();
+    const item = state.scenes.find((scene) => scene.id === id);
+    if (!item) throw new Error("scene not found");
+    if (item.isDefault) throw new Error("default scene cannot be deleted");
+    const fallback = state.scenes.find((scene) => scene.isDefault);
+    if (!fallback) throw new Error("default scene not found");
+    // 与后端一致：分类（链接随分类走）先移入默认场景，再从末尾接上排序
+    const base =
+      Math.max(
+        -1,
+        ...state.categories
+          .filter((category) => category.sceneId === fallback.id)
+          .map((category) => category.sortOrder),
+      ) + 1;
+    state.categories = state.categories.map((category) =>
+      category.sceneId === id
+        ? {
+            ...category,
+            sceneId: fallback.id,
+            sortOrder: base + category.sortOrder,
+            updatedAt: now(),
+          }
+        : category,
+    );
+    state.scenes = state.scenes.filter((scene) => scene.id !== id);
+    persist(state);
+  },
+
+  async reorderScenes(ids: string[]): Promise<void> {
+    const state = load();
+    ids.forEach((id, index) => {
+      const scene = state.scenes.find((item) => item.id === id);
+      if (scene) {
+        scene.sortOrder = index;
+        scene.updatedAt = now();
       }
     });
     persist(state);
@@ -470,10 +588,13 @@ export const mockDb = {
     const state = load();
     let linkCount = 0;
     for (const cat of categories) {
+      const sceneId =
+        state.scenes.find((scene) => scene.isDefault)?.id ?? state.scenes[0].id;
       const created: AdminCategory = {
         id: uid(),
         name: cat.name,
         icon: cat.icon ?? null,
+        sceneId,
         sortOrder: state.categories.length,
         visibility: cat.visibility ?? "public",
         createdAt: now(),

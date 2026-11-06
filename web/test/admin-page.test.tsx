@@ -20,11 +20,13 @@ const logoutMock = vi.fn(async () => {});
 const loadAdminMock = vi.fn(async () => {});
 
 const adminData: AdminData = {
+  scenes: [],
   categories: [
     {
       id: "cat-1",
       name: "开发",
       icon: null,
+      sceneId: "scene_default",
       sortOrder: 0,
       visibility: "public",
       createdAt: "2026-11-05T00:00:00.000Z",
@@ -138,7 +140,7 @@ describe("AdminPage 外壳：玻璃顶栏 + 左栏菜单 + 壁纸背景 + 玻璃
     );
   });
 
-  it("分区菜单是单一 TabsList，七项齐全（含图标）", () => {
+  it("分区菜单是单一 TabsList，八项齐全（含图标）", () => {
     seedAdmin();
     renderAdmin();
 
@@ -148,6 +150,7 @@ describe("AdminPage 外壳：玻璃顶栏 + 左栏菜单 + 壁纸背景 + 玻璃
     expect(tabs.map((t) => t.textContent)).toEqual([
       "分类",
       "链接",
+      "场景管理",
       "搜索引擎",
       "站点设置",
       "导入导出",
