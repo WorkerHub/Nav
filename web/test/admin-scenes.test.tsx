@@ -500,6 +500,8 @@ describe("AdminPage：后台场景胶囊（只有场景、无「全部」）", (
         name: "发布",
         icon: null,
         visibility: "public",
+        // 「工作」场景已有一个分类（sortOrder 0）→ 新分类追加到 1
+        sortOrder: 1,
         sceneId: "s_work",
       }),
     );

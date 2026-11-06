@@ -463,7 +463,9 @@ describe("loadAdmin 投影：旧响应不覆盖本地顺序", () => {
     await useNavStore.getState().loadAdmin();
 
     expect(ids(adminData().categories)).toEqual(["c2", "c4", "c1", "c3"]);
-    expect(orders(adminData().categories)).toEqual([0, 1, 2, 3]);
+    // 只重写本次 ids 覆盖的项（分类的 sort_order 是场景内序号）：c4 不在 ids 里，
+    // 保留它服务端的 0；被排序的三项按 ids 顺序重写为 0..2。
+    expect(orders(adminData().categories)).toEqual([0, 0, 1, 2]);
   });
 
   it("会话结束时清空簿记：重新加载回到服务端顺序", async () => {
@@ -510,5 +512,40 @@ describe("场景维度：分类排序按场景作用域提交", () => {
 
     await done;
     expect(listAllMock).not.toHaveBeenCalled();
+  });
+});
+describe("场景内排序不污染其他场景的 sortOrder", () => {
+  it("只排一个场景时，另一场景的 sortOrder 保持服务端值（新建分类才能正确算末尾）", async () => {
+    seed({
+      ...makeAdminData(),
+      categories: [
+        { ...category("a1", "A-1", 0), sceneId: "s_a" },
+        { ...category("b1", "B-1", 5), sceneId: "s_b" },
+        { ...category("a2", "A-2", 9), sceneId: "s_a" },
+        { ...category("b2", "B-2", 10), sceneId: "s_b" },
+      ],
+    });
+
+    // 只拖场景 B 的下一项：B 重写为 0/1，A 的 0/9 不被按全局位置重编号
+    await useNavStore.getState().reorderCategories(["b2", "b1"]);
+
+    const byId = new Map(adminData().categories.map((c) => [c.id, c]));
+    expect(byId.get("b2")?.sortOrder).toBe(0);
+    expect(byId.get("b1")?.sortOrder).toBe(1);
+    expect(byId.get("a1")?.sortOrder).toBe(0);
+    expect(byId.get("a2")?.sortOrder).toBe(9);
+    // 场景 B 顺序已换、A 的相对顺序不变
+    expect(
+      adminData()
+        .categories.filter((c) => c.sceneId === "s_b")
+        .sort((x, y) => x.sortOrder - y.sortOrder)
+        .map((c) => c.id),
+    ).toEqual(["b2", "b1"]);
+    expect(
+      adminData()
+        .categories.filter((c) => c.sceneId === "s_a")
+        .sort((x, y) => x.sortOrder - y.sortOrder)
+        .map((c) => c.id),
+    ).toEqual(["a1", "a2"]);
   });
 });

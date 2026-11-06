@@ -108,6 +108,12 @@ describe("useScenePreferenceStore：本机偏好（nav.scene）", () => {
     expect(useScenePreferenceStore.getState().raw).toBe("s_work");
   });
 
+  it("手改/外部写入带首尾空白的值：写盘与 state 都归一为 trim 后的值", () => {
+    useScenePreferenceStore.getState().setRaw("  s_work  ");
+    expect(localStorage.getItem(SCENE_PREFERENCE_KEY)).toBe("s_work");
+    expect(useScenePreferenceStore.getState().raw).toBe("s_work");
+  });
+
   it("空串（ToggleGroup 取消选中）被忽略：不写盘也不改 state", () => {
     useScenePreferenceStore.getState().setRaw("s_work");
     useScenePreferenceStore.getState().setRaw("");
@@ -134,6 +140,20 @@ describe("useScenePreferenceStore：本机偏好（nav.scene）", () => {
     localStorage.clear();
   });
 
+  it("模块加载时读到带空白的值也会 trim（能命中场景）", async () => {
+    localStorage.setItem(SCENE_PREFERENCE_KEY, "  s_life  ");
+    vi.resetModules();
+    const fresh = await import("@/lib/scene-preference");
+    expect(fresh.useScenePreferenceStore.getState().raw).toBe("s_life");
+    expect(
+      fresh.resolvePublicScene(
+        fresh.useScenePreferenceStore.getState().raw,
+        scenes,
+      ),
+    ).toBe("s_life");
+    localStorage.clear();
+  });
+
   it("多标签同步：收到 storage 事件即更新（不写回）", () => {
     window.dispatchEvent(
       new StorageEvent("storage", {
@@ -142,6 +162,15 @@ describe("useScenePreferenceStore：本机偏好（nav.scene）", () => {
       }),
     );
     expect(useScenePreferenceStore.getState().raw).toBe("s_work");
+
+    // 另一个标签页写入的值同样归一（手改带空白也能命中）
+    window.dispatchEvent(
+      new StorageEvent("storage", {
+        key: SCENE_PREFERENCE_KEY,
+        newValue: "  s_life  ",
+      }),
+    );
+    expect(useScenePreferenceStore.getState().raw).toBe("s_life");
 
     // 空值 / 其它键被清空（localStorage.clear()）→ 视为没存过
     window.dispatchEvent(

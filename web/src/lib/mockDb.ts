@@ -227,6 +227,22 @@ function persist(state: MockState) {
 const bySort = (a: { sortOrder: number }, b: { sortOrder: number }) =>
   a.sortOrder - b.sortOrder;
 
+/**
+ * 场景内追加序号：分类的 sort_order 是**场景内**序号（冻结契约 #16）。
+ * mock 必须与真实后端 + 前端新建口径一致：省略 sortOrder 时按该场景当前最大 + 1，
+ * 而不是全表分类数——否则「追加到末尾」只是 mock 的错觉，真实后端会落到 0。
+ */
+function nextCategorySortOrder(state: MockState, sceneId: string): number {
+  return (
+    Math.max(
+      -1,
+      ...state.categories
+        .filter((category) => category.sceneId === sceneId)
+        .map((category) => category.sortOrder),
+    ) + 1
+  );
+}
+
 /** 组装站点数据：分类内嵌可见链接（公开端点只含公开，私有端点含全量） */
 function toSiteData(state: MockState, includePrivate: boolean): PublicData {
   const categories = state.categories
@@ -325,12 +341,13 @@ export const mockDb = {
     const state = load();
     const fallbackSceneId =
       state.scenes.find((scene) => scene.isDefault)?.id ?? state.scenes[0].id;
+    const sceneId = input.sceneId ?? fallbackSceneId;
     const item: AdminCategory = {
       id: uid(),
       name: input.name ?? "未命名分类",
       icon: input.icon ?? null,
-      sceneId: input.sceneId ?? fallbackSceneId,
-      sortOrder: input.sortOrder ?? state.categories.length,
+      sceneId,
+      sortOrder: input.sortOrder ?? nextCategorySortOrder(state, sceneId),
       visibility: input.visibility ?? "public",
       createdAt: now(),
       updatedAt: now(),
@@ -595,7 +612,8 @@ export const mockDb = {
         name: cat.name,
         icon: cat.icon ?? null,
         sceneId,
-        sortOrder: state.categories.length,
+        // 场景内追加（与真实后端的省略 sortOrder 口径保持本地一致）
+        sortOrder: nextCategorySortOrder(state, sceneId),
         visibility: cat.visibility ?? "public",
         createdAt: now(),
         updatedAt: now(),

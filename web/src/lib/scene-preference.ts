@@ -31,9 +31,13 @@ function readRaw(): string | null {
   }
 }
 
-/** localStorage 里的旧值归一：空串（手改 / 旧版本写入）一律当没存过 */
+/**
+ * localStorage 里的值归一：空串（手改 / 旧版本写入）当没存过；首尾空白直接去掉
+ * （手改或外部写入的 `" s_work "` 也要能命中场景，否则会写进一个永远匹配不到的 id）。
+ */
 function normalizeRaw(raw: string | null | undefined): string | null {
-  return typeof raw === "string" && raw.trim() !== "" ? raw : null;
+  const trimmed = typeof raw === "string" ? raw.trim() : "";
+  return trimmed === "" ? null : trimmed;
 }
 
 interface ScenePreferenceState {

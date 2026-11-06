@@ -102,13 +102,29 @@ export function CategoryPanel({
     }
     const previousIcon = editing?.icon ?? null;
     const payload = { name: nextName, icon: icon || null, visibility };
-    if (editing) {
-      await adminUpdateCategory(editing.id, payload);
-      toast.success("分类已更新");
-    } else {
-      // 新建分类默认归当前场景（契约：场景内排序从此刻开始）
-      await adminCreateCategory(sceneId ? { ...payload, sceneId } : payload);
-      toast.success("分类已创建");
+    try {
+      if (editing) {
+        await adminUpdateCategory(editing.id, payload);
+        toast.success("分类已更新");
+      } else {
+        // 分类的 sort_order 是场景内排序：新建必须显式给「当前场景末尾」。
+        // 后端省略 sortOrder 会兜底 0（新分类插到场景首项之后，连建多个全堆在 0），
+        // 这里用面板拿到的（已按场景过滤的）分类取最大序号 + 1。
+        const nextSortOrder =
+          categories.reduce((max, c) => Math.max(max, c.sortOrder), -1) + 1;
+        // 新建分类默认归当前场景（契约：场景内排序从此刻开始）
+        await adminCreateCategory({
+          ...payload,
+          sortOrder: nextSortOrder,
+          ...(sceneId ? { sceneId } : {}),
+        });
+        toast.success("分类已创建");
+      }
+    } catch (error) {
+      // 例：另一个标签页刚删掉当前场景 → 后端 400「sceneId does not exist」。
+      // 失败时弹窗保持打开、错误原文透出，不能静默无反应。
+      toast.error(`保存失败：${(error as Error).message}`);
+      return;
     }
     draft.commit();
     // 图标清旧由前端负责（后端只对 settings 的 background/logo 自动清旧）
@@ -291,13 +307,19 @@ export function LinkPanel({
       description: form.description || null,
       visibility: form.visibility,
     };
-    if (editingId) {
-      await adminUpdateLink(editingId, payload);
-      toast.success("链接已更新");
-    } else {
-      if (!category) return;
-      await adminCreateLink({ ...payload, categoryId: category.id });
-      toast.success("链接已创建");
+    try {
+      if (editingId) {
+        await adminUpdateLink(editingId, payload);
+        toast.success("链接已更新");
+      } else {
+        if (!category) return;
+        await adminCreateLink({ ...payload, categoryId: category.id });
+        toast.success("链接已创建");
+      }
+    } catch (error) {
+      // 与分类/场景面板同口径：保存失败弹错误原文，弹窗保持打开
+      toast.error(`保存失败：${(error as Error).message}`);
+      return;
     }
     draft.commit();
     // 图标清旧由前端负责（后端只对 settings 的 background/logo 自动清旧）

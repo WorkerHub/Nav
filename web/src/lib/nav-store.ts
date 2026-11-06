@@ -339,11 +339,16 @@ export function resetAdminOrderState(): void {
 
 /**
  * 按 `ids` 重排并重写 sortOrder：ids 里出现的项按 ids 顺序依次填回它们在当前数组里
- * 占据的位置，其它位置（本轮新建、尚未进入 ids 的项）原地不动，sortOrder 统一重写为
- * 0..n-1。
+ * 占据的位置，其它位置（本轮新建、尚未进入 ids 的项）原地不动；sortOrder 只给本次
+ * ids 覆盖到的项重写，序号 = 它在 ids 里的位置（0..k-1）。
  *
  * 链接面板是按 sortOrder 排序渲染的（见 LinkPanel 的 categoryLinks），只换数组顺序而
  * 不改 sortOrder 会看不出变化；乐观写入、loadAdmin 投影、失败回滚都必须走这里。
+ *
+ * 为什么不再把**全表**重写为 0..n-1：分类的 sort_order 自此是**场景内**序号，分类
+ * 面板一次只提交当前场景。若把别的场景也按全局位置重编号，本地 sortOrder 会与服务端
+ * 漂移（删过分类留下空档时尤其明显），随后按「场景内最大 + 1」新建分类就会算小、
+ * 插到场景中间而不是末尾。链接 / 搜索引擎 / 场景的 ids 本来就是全量，效果不变。
  *
  * 未命中项「原地保留」而不是「接到末尾」：后端新建实体的 sort_order 默认 0，下一次
  * 加载它可能落在中间（排序键 sort_order, created_at），本地接到末尾会在刷新时跳位。
@@ -367,7 +372,17 @@ function applyOrder<T extends { id: string; sortOrder: number }>(
   items.forEach((item, index) => {
     if (picked.has(item.id)) result[index] = ordered[next++];
   });
-  return result.map((item, index) => ({ ...item, sortOrder: index }));
+  // 位置只由 ids 的顺序决定：重复 id 不占新位置，序号连续无空档
+  const positionById = new Map<string, number>();
+  for (const id of ids) {
+    if (byId.has(id) && !positionById.has(id)) {
+      positionById.set(id, positionById.size);
+    }
+  }
+  return result.map((item) => {
+    const position = positionById.get(item.id);
+    return position === undefined ? item : { ...item, sortOrder: position };
+  });
 }
 
 type AdminListItems =
@@ -467,7 +482,8 @@ function reorderList(
   const data = useNavStore.getState().adminData;
   if (!data) return Promise.resolve(); // 未加载：防御性空转
   const track = reorderTracks[key];
-  track.beforeIds ??= data[key].map((item) => item.id);
+  // 失败回滚快照取「本次提交的作用域」：分类只回滚当前场景，不把别的场景也重编号
+  track.beforeIds ??= scopeIds(key, ids);
   track.localIds = ids;
   track.pendingIds = ids;
   useNavStore.setState({
