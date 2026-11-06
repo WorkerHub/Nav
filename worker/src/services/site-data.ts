@@ -1,15 +1,16 @@
-import type {
-  AdminSceneDto,
-  Category,
-  Link,
-  PublicCategoryDto,
-  PublicLinkDto,
-  Scene,
-  SceneDto,
-  SearchEngine,
-  SearchEngineDto,
-  SiteDataDto,
-  SiteSettingsDto,
+import {
+  isLinkStyle,
+  type AdminSceneDto,
+  type Category,
+  type Link,
+  type PublicCategoryDto,
+  type PublicLinkDto,
+  type Scene,
+  type SceneDto,
+  type SearchEngine,
+  type SearchEngineDto,
+  type SiteDataDto,
+  type SiteSettingsDto,
 } from "../types";
 
 /**
@@ -52,6 +53,10 @@ export function toSiteSettingsDto(
     columns: Number.isFinite(columns) && columns > 0 ? columns : 0,
     // 存量库没有该键时按默认「开」：搜索在新标签页打开，起始页不被顶掉。
     searchNewTab: (settings.search_new_tab ?? "1") === "1",
+    // 缺省/脏值一律归一 `classic`：存量库没有该键时用经典链接样式。
+    linkStyle: isLinkStyle(settings.link_style)
+      ? settings.link_style
+      : "classic",
   };
 }
 
