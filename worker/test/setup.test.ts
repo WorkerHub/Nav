@@ -214,7 +214,10 @@ describe("POST /api/setup (secret-gated upgrade)", () => {
     expect(await readJson(res)).toEqual({
       success: true,
       tablePrefix: "",
-      migrations: [{ name: "schema_v1", status: "applied" }],
+      migrations: [
+        { name: "schema_v1", status: "applied" },
+        { name: "schema_v2", status: "applied" },
+      ],
       ownerExists: false,
     });
     expect(res.headers.get("set-cookie")).toBeNull();
@@ -234,7 +237,10 @@ describe("POST /api/setup (secret-gated upgrade)", () => {
     expect(await readJson(res)).toEqual({
       success: true,
       tablePrefix: "",
-      migrations: [{ name: "schema_v1", status: "skipped" }],
+      migrations: [
+        { name: "schema_v1", status: "skipped" },
+        { name: "schema_v2", status: "skipped" },
+      ],
       ownerExists: true,
     });
     // No account created/changed, no session handed to an anonymous caller.
@@ -299,7 +305,7 @@ describe("admin system endpoints", () => {
     expect(await readJson(res)).toEqual({
       tablePrefix: "",
       setupPageEnabled: false,
-      ledger: ["schema_v1"],
+      ledger: ["schema_v1", "schema_v2"],
     });
   });
 
@@ -316,7 +322,10 @@ describe("admin system endpoints", () => {
     expect(adminBody).toEqual({
       success: true,
       tablePrefix: "",
-      migrations: [{ name: "schema_v1", status: "skipped" }],
+      migrations: [
+        { name: "schema_v1", status: "skipped" },
+        { name: "schema_v2", status: "skipped" },
+      ],
       ownerExists: true,
     });
 

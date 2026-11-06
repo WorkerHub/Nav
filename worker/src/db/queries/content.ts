@@ -1,7 +1,14 @@
-import type { Category, Link, SearchEngine } from "../../types";
+import type { Category, Link, Scene, SearchEngine } from "../../types";
 import { nowIso } from "../sql";
 
-const CATEGORY_COLUMNS = ["name", "icon", "sort_order", "visibility"] as const;
+const CATEGORY_COLUMNS = [
+  "name",
+  "icon",
+  "sort_order",
+  "visibility",
+  "scene_id",
+] as const;
+const SCENE_COLUMNS = ["name", "icon", "sort_order", "is_default"] as const;
 const LINK_COLUMNS = [
   "category_id",
   "title",
@@ -64,13 +71,14 @@ export async function insertCategory(
     icon: string | null;
     sort_order: number;
     visibility: string;
+    scene_id: string | null;
   },
 ): Promise<void> {
   const now = nowIso();
   await db
     .prepare(
-      `INSERT INTO ${prefix}categories (id, name, icon, sort_order, visibility, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO ${prefix}categories (id, name, icon, sort_order, visibility, scene_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .bind(
       data.id,
@@ -78,6 +86,7 @@ export async function insertCategory(
       data.icon,
       data.sort_order,
       data.visibility,
+      data.scene_id,
       now,
       now,
     )
@@ -93,6 +102,7 @@ export async function updateCategory(
     icon: string | null;
     sort_order: number;
     visibility: string;
+    scene_id: string | null;
   }>,
 ): Promise<void> {
   assertColumns(
@@ -235,6 +245,168 @@ export async function deleteLinksByCategory(
     .prepare(`DELETE FROM ${prefix}links WHERE category_id = ?`)
     .bind(categoryId)
     .run();
+}
+
+/**
+ * Next append-at-the-end sort order within one scene: MAX(sort_order) + 1 (0 on
+ * an empty scene). Used when a category moves scenes without an explicit
+ * position, mirroring the delete-scene append rule.
+ */
+export async function nextCategorySortOrder(
+  db: D1Database,
+  prefix: string,
+  sceneId: string,
+): Promise<number> {
+  const row = await db
+    .prepare(
+      `SELECT COALESCE(MAX(sort_order), -1) + 1 AS next FROM ${prefix}categories WHERE scene_id = ?`,
+    )
+    .bind(sceneId)
+    .first<{ next: number }>();
+  return row?.next ?? 0;
+}
+
+// ─── Scenes ──────────────────────────────────────────────────────────────────
+
+export async function listScenes(
+  db: D1Database,
+  prefix: string,
+): Promise<Scene[]> {
+  const result = await db
+    .prepare(`SELECT * FROM ${prefix}scenes ORDER BY sort_order, created_at`)
+    .all<Scene>();
+  return result.results;
+}
+
+export async function findScene(
+  db: D1Database,
+  prefix: string,
+  id: string,
+): Promise<Scene | null> {
+  return db
+    .prepare(`SELECT * FROM ${prefix}scenes WHERE id = ?`)
+    .bind(id)
+    .first<Scene>();
+}
+
+/**
+ * The single default scene (`is_default = 1`). The partial unique index keeps
+ * it unique; the ORDER BY only makes the pick deterministic for a database that
+ * somehow predates that index.
+ */
+export async function findDefaultScene(
+  db: D1Database,
+  prefix: string,
+): Promise<Scene | null> {
+  return db
+    .prepare(
+      `SELECT * FROM ${prefix}scenes WHERE is_default = 1 ORDER BY sort_order, created_at LIMIT 1`,
+    )
+    .first<Scene>();
+}
+
+/** Next append-at-the-end sort order: MAX(sort_order) + 1 (0 on an empty table). */
+export async function nextSceneSortOrder(
+  db: D1Database,
+  prefix: string,
+): Promise<number> {
+  const row = await db
+    .prepare(
+      `SELECT COALESCE(MAX(sort_order), -1) + 1 AS next FROM ${prefix}scenes`,
+    )
+    .first<{ next: number }>();
+  return row?.next ?? 0;
+}
+
+export async function insertScene(
+  db: D1Database,
+  prefix: string,
+  data: {
+    id: string;
+    name: string;
+    icon: string | null;
+    sort_order: number;
+    is_default: number;
+  },
+): Promise<void> {
+  const now = nowIso();
+  await db
+    .prepare(
+      `INSERT INTO ${prefix}scenes (id, name, icon, sort_order, is_default, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .bind(
+      data.id,
+      data.name,
+      data.icon,
+      data.sort_order,
+      data.is_default,
+      now,
+      now,
+    )
+    .run();
+}
+
+export async function updateScene(
+  db: D1Database,
+  prefix: string,
+  id: string,
+  data: Partial<{
+    name: string;
+    icon: string | null;
+    sort_order: number;
+    is_default: number;
+  }>,
+): Promise<void> {
+  assertColumns("updateScene", data as Record<string, unknown>, SCENE_COLUMNS);
+  const fields = Object.keys(data);
+  if (fields.length === 0) return;
+  const sets = fields.map((f) => `${f} = ?`);
+  sets.push("updated_at = ?");
+  const values = [
+    ...fields.map((f) => (data as Record<string, unknown>)[f]),
+    nowIso(),
+    id,
+  ];
+  await db
+    .prepare(`UPDATE ${prefix}scenes SET ${sets.join(", ")} WHERE id = ?`)
+    .bind(...values)
+    .run();
+}
+
+/**
+ * Deletes a non-default scene, moving its categories (and with them their
+ * links, by reference) into the default scene first. Both statements run in one
+ * D1 transaction; the `is_default = 0` guard makes deleting the default scene a
+ * no-op instead of user-data loss. Categories keep their relative order, appended
+ * after the default scene's existing ones via `base` (default-scene MAX + 1).
+ */
+export async function deleteSceneMovingCategories(
+  db: D1Database,
+  prefix: string,
+  sceneId: string,
+  defaultSceneId: string,
+): Promise<void> {
+  const row = await db
+    .prepare(
+      `SELECT COALESCE(MAX(sort_order), -1) + 1 AS base FROM ${prefix}categories WHERE scene_id = ?`,
+    )
+    .bind(defaultSceneId)
+    .first<{ base: number }>();
+  const base = row?.base ?? 0;
+
+  await db.batch([
+    db
+      .prepare(
+        `UPDATE ${prefix}categories
+            SET scene_id = ?, sort_order = sort_order + ?
+          WHERE scene_id = ?`,
+      )
+      .bind(defaultSceneId, base, sceneId),
+    db
+      .prepare(`DELETE FROM ${prefix}scenes WHERE id = ? AND is_default = 0`)
+      .bind(sceneId),
+  ]);
 }
 
 // ─── Search engines ──────────────────────────────────────────────────────────

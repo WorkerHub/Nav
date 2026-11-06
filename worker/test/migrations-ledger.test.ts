@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { migrationsTable } from "../src/lib/migrations";
+import { getMigrations, migrationsTable } from "../src/lib/migrations";
 import {
   applyMigrationList,
   runMigrations,
@@ -46,17 +46,18 @@ describe("migrationsTable() naming (three states + case preserved)", () => {
 });
 
 describe("ledgered migration runner", () => {
-  it("applies everything on an empty database and records exactly schema_v1", async () => {
+  it("applies everything on an empty database and records both migrations", async () => {
     const env = makeEnv({ TABLE_PREFIX: undefined }); // → nav_
     const result = await runMigrations(env);
 
     expect(result.prefix).toBe("nav_");
     expect(result.migrations.map((m) => [m.name, m.status])).toEqual([
       ["schema_v1", "applied"],
+      ["schema_v2", "applied"],
     ]);
 
     const ledger = ledgerRows(env.DB, "nav_");
-    expect(ledger.map((row) => row.name)).toEqual(["schema_v1"]);
+    expect(ledger.map((row) => row.name)).toEqual(["schema_v1", "schema_v2"]);
     expect(ledger[0]?.applied_at).toBeGreaterThan(0);
 
     const tables = tableNames(env.DB);
@@ -71,6 +72,7 @@ describe("ledgered migration runner", () => {
       "links",
       "search_engines",
       "settings",
+      "scenes",
     ]) {
       expect(tables).toContain(`nav_${table}`);
     }
@@ -91,6 +93,7 @@ describe("ledgered migration runner", () => {
     const second = await runMigrations(env);
     expect(second.migrations).toEqual([
       { name: "schema_v1", status: "skipped" },
+      { name: "schema_v2", status: "skipped" },
     ]);
 
     expect(tableNames(env.DB)).toEqual(schemaBefore);
@@ -112,24 +115,31 @@ describe("ledgered migration runner", () => {
     expect(tableNames(env.DB)).toContain("_schema_migrations");
     expect(ledgerRows(env.DB, "").map((row) => row.name)).toEqual([
       "schema_v1",
+      "schema_v2",
     ]);
   });
 
   it("adopts an existing nav_* schema that predates the ledger", async () => {
-    // Simulates a nav v1 database: all business tables present, no ledger yet.
+    // Simulates a nav v1 database: schema_v1 tables present, no ledger yet, and
+    // no scene dimension. schema_v1 (IF NOT EXISTS) adopts it, then schema_v2
+    // adds scenes + categories.scene_id.
     const env = makeEnv({ TABLE_PREFIX: "nav_" });
-    await runMigrations(env);
-    sqliteOf(env.DB).exec("DROP TABLE _nav_schema_migrations;");
+    const v1 = getMigrations("nav_")[0];
+    if (!v1) throw new Error("schema_v1 missing");
+    sqliteOf(env.DB).exec(v1.sql);
 
     const result = await runMigrations(env);
     expect(result.prefix).toBe("nav_");
     expect(result.migrations).toEqual([
       { name: "schema_v1", status: "applied" },
+      { name: "schema_v2", status: "applied" },
     ]);
     expect(ledgerRows(env.DB, "nav_").map((row) => row.name)).toEqual([
       "schema_v1",
+      "schema_v2",
     ]);
     expect(tableNames(env.DB)).toContain("_nav_schema_migrations");
+    expect(tableNames(env.DB)).toContain("nav_scenes");
   });
 
   it("aborts instead of quietly switching to a different prefix", async () => {
@@ -177,6 +187,7 @@ describe("ledgered migration runner", () => {
     expect(result.prefix).toBe("nav_");
     expect(result.migrations).toEqual([
       { name: "schema_v1", status: "applied" },
+      { name: "schema_v2", status: "applied" },
     ]);
   });
 

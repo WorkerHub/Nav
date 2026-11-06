@@ -15,25 +15,64 @@ export class SqliteD1 {
     this.queries.push(sql);
     const statement = () => db.prepare(sql);
 
-    return {
-      bind: (...args: unknown[]) => ({
+    const execute = (args: unknown[]) => {
+      statement().run(...(args as any[]));
+    };
+
+    const withArgs = (args: unknown[]) => {
+      const stub: any = {
         first: async <T>() =>
           (statement().get(...(args as any[])) ?? null) as T | null,
         all: async <T>() => ({
           results: statement().all(...(args as any[])) as T[],
         }),
         run: async () => {
-          statement().run(...(args as any[]));
+          execute(args);
           return { success: true };
         },
-      }),
+      };
+      // Internal hook used by batch(): D1 statements are executed by their
+      // prepared form, not by re-parsing the bound stub.
+      stub._execute = () => execute(args);
+      return stub;
+    };
+
+    const stub: any = {
+      bind: (...args: unknown[]) => withArgs(args),
       first: async <T>() => (statement().get() ?? null) as T | null,
       all: async <T>() => ({ results: statement().all() as T[] }),
       run: async () => {
-        statement().run();
+        execute([]);
         return { success: true };
       },
     };
+    stub._execute = () => execute([]);
+    return stub;
+  }
+
+  /**
+   * Minimal D1 batch(): one BEGIN, every statement in order, COMMIT; any error
+   * rolls the whole batch back and is rethrown (matching D1's all-or-nothing
+   * transaction semantics for scene deletion).
+   */
+  async batch(statements: any[]): Promise<Array<{ success: boolean }>> {
+    this.db.exec("BEGIN");
+    try {
+      const results = statements.map((statement) => {
+        if (typeof statement?._execute !== "function") {
+          throw new Error(
+            "SqliteD1.batch only supports statements created by prepare()",
+          );
+        }
+        statement._execute();
+        return { success: true };
+      });
+      this.db.exec("COMMIT");
+      return results;
+    } catch (err) {
+      this.db.exec("ROLLBACK");
+      throw err;
+    }
   }
 
   // D1Database.exec(): runs one or more semicolon-separated statements. Backed
