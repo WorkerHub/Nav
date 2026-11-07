@@ -124,10 +124,10 @@ describe("PublicPage 头部：时钟块取代顶栏", () => {
     expect(screen.getByText(/^\d{2}:\d{2}$/)).toBeInTheDocument();
   });
 
-  it("正文底部留白足够让最后一行链接超出固定坞（pb-80），锚点偏移调小（scroll-mt-6）", () => {
+  it("正文底部留白足够让最后一行链接超出固定坞（pb-88），锚点偏移调小（scroll-mt-6）", () => {
     render(<PublicPage onOpenAdmin={vi.fn()} />);
 
-    expect(document.querySelector("main")).toHaveClass("pb-80");
+    expect(document.querySelector("main")).toHaveClass("pb-88");
     const section = document.getElementById("cat-cat-dev");
     expect(section).toHaveClass("scroll-mt-6");
     expect(section).not.toHaveClass("scroll-mt-24");

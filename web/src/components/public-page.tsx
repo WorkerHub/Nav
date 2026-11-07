@@ -17,11 +17,11 @@ import {
 /**
  * 公开页（/）：背景图 + 顶部居中时钟块（站点标题/Logo + 时间）+ 毛玻璃搜索框
  * + 「我的导航」图标网格 + 登录后的私有区。**没有顶栏**（2026-11-06 移除）：
- * 场景胶囊与登录态操作都在右下角的固定坞里（`PublicDock`）。
+ * 场景图标与登录态操作都在右下角的固定图标坞里（`PublicDock`）。
  *
- * 场景（与分类正交）：胶囊在坞的上部、竖向排列，选中值来自本机偏好 `nav.scene`，
- * 切换只过滤前端已拿到的数据、不发请求。胶囊只列当前视角的 `scenes`（未登录只有
- * 公开场景、登录全量），组件内不做可见性判断 —— 两层取与由数据层完成。
+ * 场景（与分类正交）：场景图标在坞的上部、竖向排列（单图标宽），选中值来自本机偏好
+ * `nav.scene`，切换只过滤前端已拿到的数据、不发请求。图标只列当前视角的 `scenes`
+ * （未登录只有公开场景、登录全量，组件内不再判断）—— 两层取与由数据层完成。
  *
  * 链接呈现形态由站点设置 `linkStyle` 决定（缺省 classic），由数据层解析后传给
  * 分类区块，公共页与访客都无法在这里改。
@@ -63,7 +63,7 @@ export function PublicPage({ onOpenAdmin }: { onOpenAdmin: () => void }) {
   const settings = siteData?.settings;
   const categories = siteData?.categories ?? [];
   // 当前视角的场景全集：未登录只有公开场景、登录全量（数据层过滤，组件不再判断）。
-  // 旧后端 / 浏览器旧缓存没有 scenes：按「无场景概念」平铺展示，不渲染胶囊。
+  // 旧后端 / 浏览器旧缓存没有 scenes：按「无场景概念」平铺展示，不渲染场景图标。
   const scenes = siteData?.scenes ?? [];
   // 偏好命中可用场景就用它，否则回落默认场景；没有场景时 null（不做场景过滤）。
   // 本机偏好若指向私有场景，未登录时它不在 scenes 里 → 自然落回公开的默认场景。
@@ -87,10 +87,11 @@ export function PublicPage({ onOpenAdmin }: { onOpenAdmin: () => void }) {
 
       {/*
         正文：时钟块 → 搜索 → 分类区块。
-        底部留白 pb-80（320px）大于右下角坞的最大高度（场景组封顶 128 + 间距 8 +
-        按钮组 92 = 228px）：滚到页面底部时最后一行链接完整露出，不会被固定坞盖住。
+        底部留白 pb-88（352px）大于右下角坞的最大高度（场景组封顶 160 + 间距 8 +
+        按钮组 140 = 308px，再加坞离底边的 16px）：滚到页面底部时最后一行链接
+        完整露出，不会被固定坞盖住。
       */}
-      <main className="mx-auto flex max-w-7xl flex-col gap-10 px-4 pb-80 sm:px-8">
+      <main className="mx-auto flex max-w-7xl flex-col gap-10 px-4 pb-88 sm:px-8">
         <FadeIn className="pt-10 sm:pt-16">
           <SiteClock
             siteTitle={settings?.siteTitle ?? "我的导航"}
@@ -122,7 +123,7 @@ export function PublicPage({ onOpenAdmin }: { onOpenAdmin: () => void }) {
         </div>
       </main>
 
-      {/* 右下角固定坞：上部场景胶囊、下部主题与登录态操作 */}
+      {/* 右下角固定坞：上部场景图标、下部主题与登录态图标按钮 */}
       <PublicDock
         scenes={scenes}
         activeScene={activeScene}

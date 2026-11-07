@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { SceneSwitcher } from "@/components/scene-switcher";
@@ -123,5 +123,81 @@ describe("SceneSwitcher：交互", () => {
 
     await user.click(screen.getByRole("radio", { name: "工作" }));
     expect(onChange).not.toHaveBeenCalled();
+  });
+});
+
+describe("SceneSwitcher：iconOnly（右下角坞的图标态）", () => {
+  it("设了图标显图片，没设图标回退首字圆；名称走 title/aria-label", () => {
+    render(
+      <SceneSwitcher
+        scenes={[work, common]}
+        value="s_default"
+        onValueChange={vi.fn()}
+        iconOnly
+      />,
+    );
+
+    // 没图标：圆形底 + 首字，读屏只念 aria-label，不重复念「工」
+    const withInitial = screen.getByRole("radio", { name: "工作" });
+    expect(withInitial).toHaveAttribute("title", "工作");
+    expect(withInitial.querySelector("img")).toBeNull();
+    expect(withInitial).toHaveTextContent("工");
+    expect(withInitial.querySelector("span")).toHaveAttribute(
+      "aria-hidden",
+      "true",
+    );
+
+    // 有图标：直接显图片，不显场景名文字
+    const withIcon = screen.getByRole("radio", { name: "通用" });
+    expect(withIcon).toHaveAttribute("title", "通用");
+    expect(withIcon.textContent).toBe("");
+    expect(withIcon.querySelector("img")).toHaveAttribute(
+      "src",
+      "/assets/assets/icon/scene.png",
+    );
+  });
+
+  it("图标加载失败：回退首字圆（不显示破图）", () => {
+    render(
+      <SceneSwitcher
+        scenes={[common]}
+        value="s_default"
+        onValueChange={vi.fn()}
+        iconOnly
+      />,
+    );
+
+    const radio = screen.getByRole("radio", { name: "通用" });
+    const img = radio.querySelector("img");
+    expect(img).not.toBeNull();
+    fireEvent.error(img as HTMLImageElement);
+
+    expect(radio.querySelector("img")).toBeNull();
+    expect(radio).toHaveTextContent("通");
+  });
+
+  it("iconOnly 仍是单选组语义：选中项 aria-checked=true，点击可切换", async () => {
+    const onChange = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <SceneSwitcher
+        scenes={[work, common]}
+        value="s_work"
+        onValueChange={onChange}
+        iconOnly
+      />,
+    );
+
+    expect(screen.getByRole("radio", { name: "工作" })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    expect(screen.getByRole("radio", { name: "通用" })).toHaveAttribute(
+      "aria-checked",
+      "false",
+    );
+
+    await user.click(screen.getByRole("radio", { name: "通用" }));
+    expect(onChange).toHaveBeenCalledWith("s_default");
   });
 });
