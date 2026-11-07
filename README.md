@@ -35,7 +35,8 @@ pnpm dev          # 同时起 worker (wrangler dev) 与 web (vite)
 ```bash
 pnpm typecheck    # web + worker
 pnpm test         # worker 与 web 单测（vitest；worker 用真 SQLite 内存库跑迁移与 API 契约）
-pnpm lint && pnpm format:check
+pnpm lint         # Biome 代码检查：按 biome.json 的 recommended 规则查代码问题，有 error 即失败、warning 只提示
+pnpm format:check # Biome 格式检查：只比对缩进/引号/换行等格式是否合规，不改文件；要自动重排跑 pnpm format
 ```
 
 ## 部署
