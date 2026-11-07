@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { PublicDock } from "@/components/public-dock";
 import { PublicPage } from "@/components/public-page";
+import { hashColor } from "@/lib/icons";
 import type { AuthStatus } from "@/lib/nav-store";
 import { useNavStore } from "@/lib/nav-store";
 import type { Scene, SiteSettings } from "@/lib/types";
@@ -20,6 +21,15 @@ const work: Scene = {
   name: "工作",
   icon: null,
   sortOrder: 1,
+  isDefault: false,
+  visibility: "public",
+};
+/** 设了图标的场景：坞里直接显示图标，不显示首字圆 */
+const study: Scene = {
+  id: "s_study",
+  name: "学习",
+  icon: "/assets/assets/icon/scene-study.png",
+  sortOrder: 2,
   isDefault: false,
   visibility: "public",
 };
@@ -49,12 +59,21 @@ function dock() {
   return screen.getByRole("complementary", { name: "场景与快捷操作" });
 }
 
-describe("PublicDock：右下角固定坞", () => {
-  it("固定贴右下、层级高于内容；外层不吃点击，面板各自可点", () => {
+describe("PublicDock：右下角单图标宽竖排轨道", () => {
+  it("固定贴右下、整坞只有一个图标宽（w-11）；外层不吃点击，面板各自可点", () => {
     renderDock();
 
     const aside = dock();
-    expect(aside).toHaveClass("fixed", "bottom-4", "z-30", "items-end");
+    expect(aside).toHaveClass(
+      "fixed",
+      "right-4",
+      "bottom-4",
+      "z-30",
+      "w-11",
+      "items-center",
+    );
+    // 改造前是 112px 的横向文字坞，现在不再有那个宽度
+    expect(aside).not.toHaveClass("w-28");
     // 坞占的透明区域不挡下面的链接
     expect(aside).toHaveClass("pointer-events-none");
     expect(
@@ -73,29 +92,50 @@ describe("PublicDock：右下角固定坞", () => {
     expect(scoped.getByRole("button", { name: /^主题：/ })).toBeInTheDocument();
   });
 
-  it("未登录：只有「登录」，点它回调 onLogin", async () => {
+  it("未登录：只有「登录」，图标按钮无文字、title/aria-label 带功能名", async () => {
     const user = userEvent.setup();
     const props = renderDock({ authStatus: "anonymous" });
 
-    await user.click(screen.getByRole("button", { name: "登录" }));
+    const login = screen.getByRole("button", { name: "登录" });
+    expect(login).toHaveAttribute("title", "登录");
+    expect(login.textContent).toBe("");
+    expect(login).toHaveClass("size-11", "rounded-full");
+
+    await user.click(login);
     expect(props.onLogin).toHaveBeenCalledTimes(1);
     expect(props.onOpenAdmin).not.toHaveBeenCalled();
   });
 
-  it("已登录：「后台」与「退出」各走各的回调", async () => {
+  it("已登录：「后台」与「退出」各是图标按钮，各走各的回调", async () => {
     const user = userEvent.setup();
     const props = renderDock({ authStatus: "authenticated" });
 
-    await user.click(screen.getByRole("button", { name: "后台" }));
-    await user.click(screen.getByRole("button", { name: "退出" }));
+    const admin = screen.getByRole("button", { name: "后台" });
+    const logout = screen.getByRole("button", { name: "退出" });
+    expect(admin.textContent).toBe("");
+    expect(logout.textContent).toBe("");
+    expect(admin).toHaveAttribute("title", "后台");
+    expect(logout).toHaveAttribute("title", "退出");
+
+    await user.click(admin);
+    await user.click(logout);
     expect(props.onOpenAdmin).toHaveBeenCalledTimes(1);
     expect(props.onLogout).toHaveBeenCalledTimes(1);
     expect(props.onLogin).not.toHaveBeenCalled();
   });
+
+  it("主题按钮也是单图标宽、无文字（功能名在 aria-label/title）", () => {
+    renderDock();
+
+    const theme = within(dock()).getByRole("button", { name: /^主题：/ });
+    expect(theme).toHaveClass("size-11", "rounded-full");
+    expect(theme.textContent).toBe("");
+    expect(theme).toHaveAttribute("title", theme.getAttribute("aria-label"));
+  });
 });
 
-describe("PublicDock：场景胶囊组", () => {
-  it("多个场景：胶囊竖排在坞的上部，点一段写回场景偏好", async () => {
+describe("PublicDock：场景图标组", () => {
+  it("多个场景：场景图标竖排在坞的上部，点一个写回场景偏好", async () => {
     const user = userEvent.setup();
     const props = renderDock({
       scenes: [common, work],
@@ -103,30 +143,59 @@ describe("PublicDock：场景胶囊组", () => {
     });
 
     const group = within(dock()).getByRole("radiogroup", { name: "切换场景" });
-    // 竖排 + 定宽 + 组内滚动（场景多时不会把坞撑高）
+    // 竖排 + 单图标宽 + 组内滚动（场景多时不会把坞撑高），不再是原来的玻璃卡
     expect(group).toHaveClass(
       "flex-col",
-      "w-28",
-      "max-h-32",
+      "w-full",
+      "max-h-40",
       "overflow-y-auto",
     );
-    expect(group).not.toHaveClass("flex-wrap");
-    // 场景胶囊在按钮组之前（坞的「上部」）
+    expect(group).not.toHaveClass("flex-wrap", "glass");
+    // 场景图标在按钮组之前（坞的「上部」）
     const login = screen.getByRole("button", { name: "登录" });
     expect(
       group.compareDocumentPosition(login) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
 
-    await user.click(screen.getByRole("radio", { name: "工作" }));
+    const radio = screen.getByRole("radio", { name: "工作" });
+    expect(radio).toHaveClass("size-11", "rounded-full");
+    await user.click(radio);
     expect(props.onSceneChange).toHaveBeenCalledWith("s_work");
   });
 
-  it("只有一个场景（仅「通用」）：不渲染胶囊，与场景维度上线前一致", () => {
+  it("没设图标的场景：圆形底 + 场景名首字，title/aria-label 是场景名", () => {
+    renderDock({ scenes: [common, work], activeScene: "s_default" });
+
+    const radio = screen.getByRole("radio", { name: "通用" });
+    expect(radio).toHaveAttribute("title", "通用");
+    expect(radio.querySelector("img")).toBeNull();
+    expect(radio).toHaveTextContent("通");
+
+    const initial = radio.querySelector("span");
+    expect(initial).toHaveAttribute("aria-hidden", "true");
+    expect(initial).toHaveStyle({ background: hashColor("s_default") });
+  });
+
+  it("设了图标的场景：显示图片，不显示首字圆", () => {
+    renderDock({ scenes: [common, study], activeScene: "s_study" });
+
+    const radio = screen.getByRole("radio", { name: "学习" });
+    expect(radio).toHaveAttribute("title", "学习");
+    const img = radio.querySelector("img");
+    expect(img).toHaveAttribute("src", "/assets/assets/icon/scene-study.png");
+    expect(radio.textContent).toBe("");
+
+    // 选中态沿用 glass-scene-trigger 的底色/描边口径
+    expect(radio).toHaveClass("glass-scene-trigger");
+    expect(radio).toHaveAttribute("aria-checked", "true");
+  });
+
+  it("只有一个场景（仅「通用」）：不渲染场景图标，与场景维度上线前一致", () => {
     renderDock({ scenes: [common], activeScene: "s_default" });
     expect(screen.queryByRole("radiogroup")).toBeNull();
   });
 
-  it("没有场景概念（activeScene 为 null）：不渲染胶囊", () => {
+  it("没有场景概念（activeScene 为 null）：不渲染场景图标", () => {
     renderDock({ scenes: [common, work], activeScene: null });
     expect(screen.queryByRole("radiogroup")).toBeNull();
   });

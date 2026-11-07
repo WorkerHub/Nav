@@ -17,16 +17,10 @@ const THEME_LABELS: Record<ThemeMode, string> = {
  * 点击按「跟随系统 → 浅色 → 深色 → 跟随系统」循环，选择写入本机 localStorage，
  * 只影响这个浏览器。没有本机偏好时默认跟随系统，所以按钮任何时刻都可渲染可点。
  *
- * 两种形态：缺省是顶栏用的纯图标按钮（`icon-sm`）；`showLabel` 时是带档位文案的
- * 行（公共页右下角坞里用），`aria-label`/`title` 与点击循环两种形态完全一致。
+ * 纯图标按钮（`icon-sm`）：当前档位由图标表达（显示器/太阳/月亮），
+ * 功能名与下一档写在 `aria-label`/`title` 里，悬停与读屏都能辨认。
  */
-export function ThemeToggle({
-  className,
-  showLabel = false,
-}: {
-  className?: string;
-  showLabel?: boolean;
-}) {
+export function ThemeToggle({ className }: { className?: string }) {
   const { mode, cycle } = useThemeCycle();
 
   const Icon = THEME_ICONS[mode];
@@ -35,18 +29,13 @@ export function ThemeToggle({
   return (
     <Button
       variant="ghost"
-      size={showLabel ? "sm" : "icon-sm"}
-      className={cn(
-        "glass text-foreground hover:text-foreground",
-        showLabel && "w-full justify-start gap-1.5",
-        className,
-      )}
+      size="icon-sm"
+      className={cn("glass text-foreground hover:text-foreground", className)}
       aria-label={label}
       title={label}
       onClick={cycle}
     >
       <Icon className="size-4" aria-hidden="true" />
-      {showLabel && <span className="truncate">{THEME_LABELS[mode]}</span>}
     </Button>
   );
 }
