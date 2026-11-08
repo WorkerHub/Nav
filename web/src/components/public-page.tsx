@@ -123,8 +123,9 @@ export function PublicPage({ onOpenAdmin }: { onOpenAdmin: () => void }) {
   const linkStyle = resolveLinkStyle(settings);
   // 是否显示网址（站点设置 showUrl，缺省开）：只影响普通模式，编辑模式恒显示
   const showUrl = resolveShowUrl(settings);
-  // classic 档的每行上限（站点设置 columns，1–12；0/未配置 → 默认 8）；实际每行
-  // 放几块由容器宽度与砖间距决定，compact / wide 不使用该值（由 linkGridLayout 忽略）
+  // classic 档的成块列数（站点设置 columns，1–12；0/未配置 → 默认 8）：桌面按这个
+  // 数成块、整块居中，窄屏放不下整块时一行自然少放几块；compact / wide 不使用
+  // 该值（由 linkGridLayout 忽略）
   const columns = resolveColumns(settings?.columns);
 
   // 私有标识：/api/private 的分类 DTO 不含 visibility，用「全量里有、公开列表里没有」推导私有分类。

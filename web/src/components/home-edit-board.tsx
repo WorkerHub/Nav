@@ -54,15 +54,16 @@ import type { LinkStyle, SiteCategory, SiteLink } from "@/lib/types";
  * 位移 6px 激活（单击不被吃掉）。拖拽覆盖层用 dnd-kit 原生 `DragOverlay`。
  *
  * 尺寸口径：砖的格子由 `linkGridLayout(linkStyle, columns)` 给出（与普通模式同一个
- * 容器，classic 的每行上限取站点设置 `columns`）；classic 的砖壳是固定方砖
+ * 容器，classic 的成块列数取站点设置 `columns`）；classic 的砖壳是固定方砖
  * （`size-[141.5px]`），普通模式与编辑模式完全同尺寸，名称与网址在砖内单行截断
  * （`LinkTileContent` 的 `singleLine`）、悬停 `title` 看全称。✕ 角标定位在外层
  * 包一层上，自然落在方砖的右上角。拖拽预览用 dnd-kit 的 `DragOverlay`：包裹层
  * 尺寸由它按砖的实测矩形给定，砖规整后预览也就一致。
  *
- * 排布从「网格」改成「固定方砖 + 弹性换行 + 逐行居中」后，dnd-kit 侧不需要换策略：
- * DOM 顺序、`SortableContext` 分组与投放 id 全不变；`rectSortingStrategy` 只是按
- * 实测矩形做位移预览，砖全部等尺寸反而更准；`closestCorners` 也不依赖网格。
+ * 排布从「网格」改成「固定方砖 + 弹性换行 + 整块居中 + 末行左对齐」后，dnd-kit
+ * 侧不需要换策略：DOM 顺序、`SortableContext` 分组与投放 id 全不变；
+ * `rectSortingStrategy` 只是按实测矩形做位移预览，砖全部等尺寸反而更准；
+ * `closestCorners` 也不依赖网格。
  * 空分类的落点就是那块固定尺寸的「+」砖，命中面积随方砖确定。
  */
 
@@ -331,7 +332,7 @@ export function HomeEditBoard({
   /** 当前场景的分类（组内链接已按 sortOrder 排好，与正常模式同源） */
   categories: readonly SiteCategory[];
   linkStyle: LinkStyle;
-  /** classic 每行上限（站点设置 `columns`，1–12）；缺省/0 回默认值，与普通模式同源 */
+  /** classic 成块列数（站点设置 `columns`，1–12）；缺省/0 回默认值，与普通模式同源 */
   columns?: number;
   /** 私有分类 id（显示「私有」徽标，与正常模式同口径） */
   privateCategories: ReadonlySet<string>;

@@ -167,13 +167,13 @@ describe("PublicPage 头部：时钟块取代顶栏", () => {
     const link = screen.getByRole("link", { name: /GitHub/ });
     expect(link).toHaveClass("glass");
     expect(link).toHaveTextContent("github.com");
-    // fixture 的 columns=6 现在真的生效（classic 的每行上限取站点设置）
+    // fixture 的 columns=6 现在真的生效（classic 的成块列数取站点设置）
     expect(link.parentElement?.parentElement).toHaveStyle({
       maxWidth: "1089px",
     });
   });
 
-  it("settings.columns=5（classic）：每行上限 5 块（行组上限 899.5px），砖尺寸不随列数变", () => {
+  it("settings.columns=5（classic）：成块 5 列（行组宽度上限 899.5px），砖尺寸不随列数变", () => {
     seedSite({ ...baseSettings, columns: 5 });
     render(<PublicPage onOpenAdmin={vi.fn()} />);
 
@@ -188,7 +188,7 @@ describe("PublicPage 头部：时钟块取代顶栏", () => {
     );
   });
 
-  it("settings.columns=0（未配置）：回默认上限 8 块（行组 1468px）", () => {
+  it("settings.columns=0（未配置）：回默认 8 列（行组 1468px）", () => {
     seedSite({ ...baseSettings, columns: 0 });
     render(<PublicPage onOpenAdmin={vi.fn()} />);
 
