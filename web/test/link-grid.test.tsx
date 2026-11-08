@@ -5,6 +5,7 @@ import {
   LINK_ICON_BOX,
   LinkGrid,
 } from "@/components/link-grid";
+import { CLASSIC_TILE_SIZE } from "@/lib/grid-columns";
 import type { LinkStyle, SiteCategory, SiteLink } from "@/lib/types";
 
 const links: SiteLink[] = [
@@ -28,9 +29,9 @@ const links: SiteLink[] = [
   },
 ];
 
-/** 网格容器：条目外面那层 `grid`。 */
+/** 网格容器：普通/编辑模式共用的那个 `[data-link-grid]`。 */
 function grid(container: HTMLElement) {
-  const el = container.querySelector(".grid");
+  const el = container.querySelector<HTMLElement>("[data-link-grid]");
   if (!el) throw new Error("网格容器未找到");
   return el;
 }
@@ -43,18 +44,31 @@ function iconBox(link: HTMLElement, linkStyle: LinkStyle): HTMLElement {
 }
 
 describe("LinkGrid：三档样式", () => {
-  it("缺省（不传 linkStyle）= classic：图标上、名称下、域名小字，列数用默认梯度", () => {
+  it("缺省（不传 linkStyle）= classic：固定方砖、图标上名称下域名小字，换行居中", () => {
     const { container } = render(<LinkGrid links={links} />);
 
-    expect(grid(container)).toHaveClass(
-      "grid-cols-4",
-      "sm:grid-cols-5",
-      "md:grid-cols-6",
-      "lg:grid-cols-7",
-      "xl:grid-cols-8",
+    // classic 不再是网格：固定方砖 + 弹性换行，逐行居中（含不满的最后一行）
+    const gridEl = grid(container);
+    expect(gridEl).toHaveClass(
+      "flex",
+      "flex-wrap",
+      "w-full",
+      "justify-center",
+      "mx-auto",
     );
+    expect(gridEl).not.toHaveClass("grid");
+    expect(gridEl).not.toHaveClass("grid-cols-8");
+    // 每行上限走内联 maxWidth（columns 未配置 = 默认 8）
+    expect(gridEl).toHaveStyle({ maxWidth: "1468px" });
+
     const link = screen.getByRole("link", { name: /GitHub/ });
     expect(link).toHaveClass("glass", "flex-col", "text-center");
+    // 方砖：宽高固定（与常量同源，改了任一处这条会挂）
+    expect(link).toHaveClass(`size-[${CLASSIC_TILE_SIZE}px]`, "shrink-0");
+    expect(link).not.toHaveClass("h-full");
+    expect(link).not.toHaveClass("w-full");
+    // FadeIn 那层是 flex item，不能把方砖压小
+    expect(link.parentElement).toHaveClass("shrink-0");
     expect(link).toHaveTextContent("github.com");
     expect(link.querySelector("img")).toHaveAttribute("width", "44");
     // 图标在固定 44×44 的盒子里等比缩放、填满盒子
@@ -68,13 +82,16 @@ describe("LinkGrid：三档样式", () => {
       <LinkGrid links={links} linkStyle="compact" />,
     );
 
-    expect(grid(container)).toHaveClass(
+    const compactGrid = grid(container);
+    expect(compactGrid).toHaveClass(
       "grid-cols-2",
       "sm:grid-cols-3",
       "md:grid-cols-4",
       "lg:grid-cols-5",
     );
-    expect(grid(container)).not.toHaveClass("grid-cols-4");
+    expect(compactGrid).not.toHaveClass("grid-cols-4");
+    // compact 不吃 classic 的排布参数
+    expect(compactGrid.style.maxWidth).toBe("");
 
     const link = screen.getByRole("link", { name: /GitHub/ });
     // 无卡片底：不带 .glass / .glass-hover
@@ -95,11 +112,13 @@ describe("LinkGrid：三档样式", () => {
   it("wide：玻璃底宽卡，图标左、右侧名称 + 域名两行，桌面 3 列", () => {
     const { container } = render(<LinkGrid links={links} linkStyle="wide" />);
 
-    expect(grid(container)).toHaveClass(
+    const wideGrid = grid(container);
+    expect(wideGrid).toHaveClass(
       "grid-cols-1",
       "sm:grid-cols-2",
       "lg:grid-cols-3",
     );
+    expect(wideGrid.style.maxWidth).toBe("");
 
     const link = screen.getByRole("link", { name: /GitHub/ });
     expect(link).toHaveClass("glass", "glass-hover", "items-center");
@@ -162,7 +181,7 @@ describe("CategorySection：把样式透传给网格，锚点偏移随顶栏移�
     expect(section).toHaveAttribute("id", "cat-cat-dev");
     expect(section).toHaveClass("scroll-mt-6");
     expect(section).not.toHaveClass("scroll-mt-24");
-    expect(grid(container)).toHaveClass("xl:grid-cols-8");
+    expect(grid(container)).toHaveStyle({ maxWidth: "1468px" });
   });
 
   it("linkStyle=wide：分类里的链接换成宽卡片", () => {
@@ -175,57 +194,52 @@ describe("CategorySection：把样式透传给网格，锚点偏移随顶栏移�
   });
 });
 
-describe("LinkGrid：classic 列数（站点设置 columns）", () => {
-  const DEFAULT_GRADIENT = [
-    "grid-cols-4",
-    "sm:grid-cols-5",
-    "md:grid-cols-6",
-    "lg:grid-cols-7",
-    "xl:grid-cols-8",
-  ];
-
-  it("columns=5：桌面 5 列，窄屏按梯度递减（2 / 2 / 3 / 4 / 5）", () => {
+describe("LinkGrid：classic 每行上限（站点设置 columns）", () => {
+  it("columns=5：行组上限 899.5px（5 块 + 4 个 48px 间距），砖尺寸不变", () => {
     const { container } = render(<LinkGrid links={links} columns={5} />);
 
-    expect(grid(container)).toHaveClass(
-      "grid-cols-2",
-      "sm:grid-cols-2",
-      "md:grid-cols-3",
-      "lg:grid-cols-4",
-      "xl:grid-cols-5",
+    const gridEl = grid(container);
+    expect(gridEl).toHaveStyle({ maxWidth: "899.5px" });
+    // 没有按列数生成的 grid-cols 类名了
+    expect(gridEl.className).not.toContain("grid-cols");
+    expect(screen.getByRole("link", { name: /GitHub/ })).toHaveClass(
+      `size-[${CLASSIC_TILE_SIZE}px]`,
     );
-    expect(grid(container)).not.toHaveClass("xl:grid-cols-8");
   });
 
-  it("两个边界：columns=1 全档单列；columns=12 桌面 12、lg 封顶 10、手机保底 4", () => {
+  it("两个边界：columns=1 行组只有一块砖；columns=12 行组上限 2226px", () => {
     const single = render(<LinkGrid links={links} columns={1} />);
-    expect(grid(single.container)).toHaveClass(
-      "grid-cols-1",
-      "sm:grid-cols-1",
-      "md:grid-cols-1",
-      "lg:grid-cols-1",
-      "xl:grid-cols-1",
-    );
+    expect(grid(single.container)).toHaveStyle({
+      maxWidth: "141.5px",
+      columnGap: "12px",
+    });
     single.unmount();
 
     const max = render(<LinkGrid links={links} columns={12} />);
-    expect(grid(max.container)).toHaveClass(
-      "grid-cols-4",
-      "sm:grid-cols-6",
-      "md:grid-cols-8",
-      "lg:grid-cols-10",
-      "xl:grid-cols-12",
-    );
+    expect(grid(max.container)).toHaveStyle({ maxWidth: "2226px" });
     max.unmount();
   });
 
-  it("columns=0 / 不传：沿用默认梯度（与改动前逐字一致）", () => {
+  it("columns=0 / 不传：与默认 8 完全一致", () => {
     const zero = render(<LinkGrid links={links} columns={0} />);
-    expect(grid(zero.container)).toHaveClass(...DEFAULT_GRADIENT);
+    expect(grid(zero.container)).toHaveStyle({ maxWidth: "1468px" });
     zero.unmount();
 
     const none = render(<LinkGrid links={links} />);
-    expect(grid(none.container)).toHaveClass(...DEFAULT_GRADIENT);
+    expect(grid(none.container)).toHaveStyle({ maxWidth: "1468px" });
+  });
+
+  it("columns 不影响砖尺寸：columns=4 与 columns=8 的砖类名一致", () => {
+    const four = render(<LinkGrid links={links} columns={4} />);
+    const fourTile = screen.getByRole("link", { name: /GitHub/ }).className;
+    expect(grid(four.container)).toHaveStyle({ maxWidth: "710px" });
+    four.unmount();
+
+    const eight = render(<LinkGrid links={links} columns={8} />);
+    const eightTile = screen.getByRole("link", { name: /GitHub/ }).className;
+    expect(grid(eight.container)).toHaveStyle({ maxWidth: "1468px" });
+
+    expect(fourTile).toBe(eightTile);
   });
 
   it("compact / wide 不看 columns：传了也不改变各自排法", () => {
@@ -238,6 +252,7 @@ describe("LinkGrid：classic 列数（站点设置 columns）", () => {
       "md:grid-cols-4",
       "lg:grid-cols-5",
     );
+    expect(grid(compact.container).style.maxWidth).toBe("");
     compact.unmount();
 
     const wide = render(
@@ -248,10 +263,11 @@ describe("LinkGrid：classic 列数（站点设置 columns）", () => {
       "sm:grid-cols-2",
       "lg:grid-cols-3",
     );
-    expect(grid(wide.container)).not.toHaveClass("xl:grid-cols-12");
+    expect(grid(wide.container).className).not.toContain("xl:grid-cols-12");
+    expect(grid(wide.container).style.maxWidth).toBe("");
   });
 
-  it("CategorySection 把 columns 透传给网格", () => {
+  it("CategorySection 把 columns 透传给容器", () => {
     const category: SiteCategory = {
       id: "cat-dev",
       name: "开发",
@@ -265,7 +281,7 @@ describe("LinkGrid：classic 列数（站点设置 columns）", () => {
       <CategorySection category={category} columns={5} />,
     );
 
-    expect(grid(container)).toHaveClass("xl:grid-cols-5");
+    expect(grid(container)).toHaveStyle({ maxWidth: "899.5px" });
   });
 });
 

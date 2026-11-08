@@ -167,39 +167,34 @@ describe("PublicPage 头部：时钟块取代顶栏", () => {
     const link = screen.getByRole("link", { name: /GitHub/ });
     expect(link).toHaveClass("glass");
     expect(link).toHaveTextContent("github.com");
-    // fixture 的 columns=6 现在真的生效（classic 桌面列数取站点设置）
-    expect(link.parentElement?.parentElement).toHaveClass("xl:grid-cols-6");
+    // fixture 的 columns=6 现在真的生效（classic 的每行上限取站点设置）
+    expect(link.parentElement?.parentElement).toHaveStyle({
+      maxWidth: "1089px",
+    });
   });
 
-  it("settings.columns=5（classic）：首页桌面 5 列，窄屏按梯度递减", () => {
+  it("settings.columns=5（classic）：每行上限 5 块（行组上限 899.5px），砖尺寸不随列数变", () => {
     seedSite({ ...baseSettings, columns: 5 });
     render(<PublicPage onOpenAdmin={vi.fn()} />);
 
     const grid = screen.getByRole("link", { name: /GitHub/ }).parentElement
       ?.parentElement;
-    expect(grid).toHaveClass(
-      "grid-cols-2",
-      "sm:grid-cols-2",
-      "md:grid-cols-3",
-      "lg:grid-cols-4",
-      "xl:grid-cols-5",
+    expect(grid).toHaveStyle({ maxWidth: "899.5px" });
+    // 不再有按列数/断点生成的 grid-cols 类名，也不是 grid 布局
+    expect(grid).not.toHaveClass("grid");
+    expect(grid?.className).not.toContain("grid-cols");
+    expect(screen.getByRole("link", { name: /GitHub/ })).toHaveClass(
+      "size-[141.5px]",
     );
-    expect(grid).not.toHaveClass("xl:grid-cols-8");
   });
 
-  it("settings.columns=0（未配置）：沿用默认梯度（桌面 8 列）", () => {
+  it("settings.columns=0（未配置）：回默认上限 8 块（行组 1468px）", () => {
     seedSite({ ...baseSettings, columns: 0 });
     render(<PublicPage onOpenAdmin={vi.fn()} />);
 
     const grid = screen.getByRole("link", { name: /GitHub/ }).parentElement
       ?.parentElement;
-    expect(grid).toHaveClass(
-      "grid-cols-4",
-      "sm:grid-cols-5",
-      "md:grid-cols-6",
-      "lg:grid-cols-7",
-      "xl:grid-cols-8",
-    );
+    expect(grid).toHaveStyle({ maxWidth: "1468px" });
   });
 
   it("compact / wide 不看 columns：各自排法不受影响", () => {

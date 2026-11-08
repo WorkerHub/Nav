@@ -26,7 +26,7 @@ import { FadeIn } from "@/components/glass";
 import {
   CategoryHeading,
   LinkTileContent,
-  linkGridClassName,
+  linkGridLayout,
   linkTileClassName,
 } from "@/components/link-grid";
 import { cn } from "@/lib/utils";
@@ -53,13 +53,17 @@ import type { LinkStyle, SiteCategory, SiteLink } from "@/lib/types";
  * 触屏：`TouchSensor` 长按 250ms 才激活（普通滑动照常滚动页面），`MouseSensor`
  * 位移 6px 激活（单击不被吃掉）。拖拽覆盖层用 dnd-kit 原生 `DragOverlay`。
  *
- * 尺寸口径（2026-11-08）：砖的格子由 `linkGridClassName(linkStyle, columns)` 给出
- * （与普通模式同一个网格，classic 的列数取站点设置 `columns`），
- * 砖壳必须 **撑满格子** —— `<button>` 的 `width: auto` 在 Chrome 里按内容收缩，
- * 不补 `w-full` 的话长名称/长网址的砖会比旁边的宽、甚至溢出格子。撑满后名称与网址
- * 单行截断（`LinkTileContent` 的 `singleLine`）、悬停 `title` 看全称，同档砖因此
- * 同宽同高；✕ 角标定位在外层格子 div 上，自然落在砖的右上角。拖拽预览用
- * dnd-kit 的 `DragOverlay`：包裹层尺寸由它按砖的实测矩形给定，砖规整后预览也就一致。
+ * 尺寸口径：砖的格子由 `linkGridLayout(linkStyle, columns)` 给出（与普通模式同一个
+ * 容器，classic 的每行上限取站点设置 `columns`）；classic 的砖壳是固定方砖
+ * （`size-[141.5px]`），普通模式与编辑模式完全同尺寸，名称与网址在砖内单行截断
+ * （`LinkTileContent` 的 `singleLine`）、悬停 `title` 看全称。✕ 角标定位在外层
+ * 包一层上，自然落在方砖的右上角。拖拽预览用 dnd-kit 的 `DragOverlay`：包裹层
+ * 尺寸由它按砖的实测矩形给定，砖规整后预览也就一致。
+ *
+ * 排布从「网格」改成「固定方砖 + 弹性换行 + 逐行居中」后，dnd-kit 侧不需要换策略：
+ * DOM 顺序、`SortableContext` 分组与投放 id 全不变；`rectSortingStrategy` 只是按
+ * 实测矩形做位移预览，砖全部等尺寸反而更准；`closestCorners` 也不依赖网格。
+ * 空分类的落点就是那块固定尺寸的「+」砖，命中面积随方砖确定。
  */
 
 /** 分类标题行投放目标（落到该分类末尾）的 id 前缀 */
@@ -82,12 +86,11 @@ const collisionDetection: CollisionDetection = (args) => {
 };
 
 /**
- * 空分类落点 / 分类末尾「+」砖的高度：与同档一块砖一致（框内只有一个加号）——
- * 实测值，砖壳撑满格子后三档分别落在 130 / 36 / 62px（classic 图标 44 + 名称与网址
- * 各一行；compact 小图标单行；wide 图标 36 一行名称 + 一行域名），「+」砖随之对齐。
+ * compact / wide 的「+」砖高度（框内只有一个图标）：与同档一块砖一致 ——
+ * compact 图标 20 单行、wide 图标 36 + 一行名称 + 一行域名。classic 不列在这里：
+ * 它的方砖尺寸直接由砖壳的 `size-[141.5px]` 给定，无须估算高度。
  */
-const PLACEHOLDER_CLASS: Record<LinkStyle, string> = {
-  classic: "min-h-[130px]",
+const PLACEHOLDER_CLASS: Partial<Record<LinkStyle, string>> = {
   compact: "min-h-9",
   wide: "min-h-[62px]",
 };
@@ -203,7 +206,12 @@ function EditableTile({
     <div
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={cn("relative select-none", isDragging && "opacity-40")}
+      className={cn(
+        "relative select-none",
+        // classic 的砖壳自身就是固定方砖，外层包一层不能把它压缩
+        linkStyle === "classic" && "shrink-0",
+        isDragging && "opacity-40",
+      )}
     >
       <button
         type="button"
@@ -213,8 +221,11 @@ function EditableTile({
         title={link.title}
         className={cn(
           linkTileClassName(linkStyle),
-          // 撑满网格格子（与普通模式的 `<a>` 同宽），名称/网址在砖内截断省略号
-          "w-full min-w-0 cursor-grab select-none active:cursor-grabbing",
+          // compact / wide 仍在网格里，砖壳要撑满格子（<button> 的 width:auto 会按
+          // 内容收缩，不补 w-full 的话长名称的砖会比旁边的窄）；classic 固定方砖，
+          // 不能补 w-full，否则宽度被容器抢走
+          linkStyle !== "classic" && "w-full min-w-0",
+          "cursor-grab select-none active:cursor-grabbing",
         )}
         onClick={() => onEdit(link.id)}
       >
@@ -290,7 +301,9 @@ function AddLinkTile({
       className={cn(
         linkTileClassName(linkStyle),
         PLACEHOLDER_CLASS[linkStyle],
-        "w-full min-w-0 items-center justify-center border border-dashed border-white/40 bg-transparent text-white/80 hover:bg-white/10 hover:text-white",
+        // 同上一块砖：compact / wide 撑满格子，classic 保持固定方砖
+        linkStyle !== "classic" && "w-full min-w-0",
+        "items-center justify-center border border-dashed border-white/40 bg-transparent text-white/80 hover:bg-white/10 hover:text-white",
         isOver && "bg-white/10",
       )}
     >
@@ -318,7 +331,7 @@ export function HomeEditBoard({
   /** 当前场景的分类（组内链接已按 sortOrder 排好，与正常模式同源） */
   categories: readonly SiteCategory[];
   linkStyle: LinkStyle;
-  /** classic 桌面列数（站点设置 `columns`，1–12）；缺省/0 用默认梯度，与普通模式同源 */
+  /** classic 每行上限（站点设置 `columns`，1–12）；缺省/0 回默认值，与普通模式同源 */
   columns?: number;
   /** 私有分类 id（显示「私有」徽标，与正常模式同口径） */
   privateCategories: ReadonlySet<string>;
@@ -432,6 +445,7 @@ export function HomeEditBoard({
   };
 
   const activeLink = activeId ? (linkById.get(activeId) ?? null) : null;
+  const { className, style } = linkGridLayout(linkStyle, columns);
 
   return (
     <DndContext
@@ -459,7 +473,11 @@ export function HomeEditBoard({
                   />
                 </EndDropTarget>
                 <SortableContext items={ids} strategy={rectSortingStrategy}>
-                  <div className={linkGridClassName(linkStyle, columns)}>
+                  <div
+                    className={className}
+                    style={style}
+                    data-link-grid={linkStyle}
+                  >
                     {ids.map((id) => {
                       const link = linkById.get(id);
                       if (!link) return null;
