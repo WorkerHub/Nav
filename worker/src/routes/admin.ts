@@ -27,6 +27,7 @@ import {
   listLinks,
   listScenes,
   listSearchEngines,
+  moveLinkWithOrder,
   nextCategorySortOrder,
   nextLinkSortOrder,
   nextSceneSortOrder,
@@ -596,6 +597,49 @@ adminRoutes.post("/links/reorder", async (c) => {
     if (typeof id !== "string")
       return badRequest("ids must be an array of link ids");
     await updateLink(c.env.DB, prefix, id, { sort_order: index });
+  }
+  return c.json({ success: true });
+});
+
+// Cross-category drag (nav #28): category and global order are saved by one
+// `db.batch` transaction, so they land together or not at all. The position is
+// the index of `linkId` inside `ids` — deliberately *not* the append-at-the-end
+// rule of `PUT /links/:id`, which stays as the admin dialog's behaviour.
+// Error order below is the frozen contract (docs/api-contract.md §链接).
+adminRoutes.post("/links/move", async (c) => {
+  const prefix = getTablePrefix(c.env);
+  const body = await c.req.json().catch(() => ({}));
+
+  const linkId = typeof body.linkId === "string" ? body.linkId.trim() : "";
+  if (!linkId) return badRequest("linkId is required");
+
+  if (!Array.isArray(body.ids))
+    return badRequest("ids must be an array of link ids");
+  const ids: string[] = [];
+  for (const id of body.ids) {
+    if (typeof id !== "string")
+      return badRequest("ids must be an array of link ids");
+    ids.push(id);
+  }
+  if (ids.filter((id) => id === linkId).length !== 1)
+    return badRequest("ids must contain linkId exactly once");
+
+  const existing = await findLink(c.env.DB, prefix, linkId);
+  if (!existing) return c.json({ error: "not found" }, 404);
+
+  // Same reading as `PUT /links/:id`: a missing/invalid categoryId never
+  // matches a row and is reported as a non-existent category.
+  const categoryId = String(body.categoryId);
+  const category = await findCategory(c.env.DB, prefix, categoryId);
+  if (!category) return badRequest("categoryId does not exist");
+
+  try {
+    await moveLinkWithOrder(c.env.DB, prefix, linkId, categoryId, ids);
+  } catch (error) {
+    // The batch is all-or-nothing: nothing was written. Report it in a shape the
+    // client can act on instead of the generic 500 from app.onError.
+    console.error("link move failed:", error);
+    return c.json({ error: "move failed" }, 500);
   }
   return c.json({ success: true });
 });

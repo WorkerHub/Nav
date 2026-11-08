@@ -175,6 +175,18 @@ describe("public/private surface isolation", () => {
       env,
     );
     expect(write.status).toBe(401);
+    // 跨分类原子保存端点同口径（nav #28）
+    const move = await app.request(
+      "/api/admin/links/move",
+      {
+        method: "POST",
+        body: JSON.stringify({ linkId: "x", categoryId: "y", ids: ["x"] }),
+        headers: { "content-type": "application/json" },
+      },
+      env,
+    );
+    expect(move.status).toBe(401);
+    expect(await readJson(move)).toEqual({ error: "unauthorized" });
   });
 });
 
@@ -533,5 +545,241 @@ describe("link edit: moving a link to another category (nav #17 move rule)", () 
       categoryId: devCat,
       sortOrder: 0,
     });
+  });
+});
+
+describe("link move: cross-category atomic save (nav #28 frozen contract)", () => {
+  let env: Env;
+  let app: Hono;
+  let cookie: string;
+  let devCat: string;
+  let readCat: string;
+
+  const adminFetch = (path: string, init: RequestInit = {}) =>
+    app.request(
+      path,
+      {
+        ...init,
+        headers: { "content-type": "application/json", cookie },
+      },
+      env,
+    );
+
+  async function createCategory(name: string): Promise<string> {
+    const res = await adminFetch("/api/admin/categories", {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    });
+    return (await readJson(res)).id;
+  }
+
+  async function createLink(body: Record<string, unknown>): Promise<string> {
+    const res = await adminFetch("/api/admin/links", {
+      method: "POST",
+      body: JSON.stringify({
+        url: `https://example.com/${String(body.title)}`,
+        ...body,
+      }),
+    });
+    return (await readJson(res)).id;
+  }
+
+  /** 全量链接（后端按 sort_order, created_at 排序）。 */
+  async function listLinks(): Promise<
+    { id: string; categoryId: string; title: string; sortOrder: number }[]
+  > {
+    return (await readJson(await adminFetch("/api/admin/links"))).links;
+  }
+
+  function sqlite(): SqliteD1["db"] {
+    return (env.DB as unknown as SqliteD1).db;
+  }
+
+  /** 绕过接口直接读库：断言「什么都没写」时用。 */
+  function rawLinks(): { id: string; categoryId: string; sortOrder: number }[] {
+    return sqlite()
+      .prepare(
+        "SELECT id, category_id AS categoryId, sort_order AS sortOrder FROM links ORDER BY sort_order, created_at",
+      )
+      .all() as { id: string; categoryId: string; sortOrder: number }[];
+  }
+
+  const move = (body: unknown) =>
+    adminFetch("/api/admin/links/move", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+
+  beforeEach(async () => {
+    env = makeEnv();
+    app = makeApp();
+    await runMigrations(env);
+    cookie = (await setupRequest(app, env)).headers.get("set-cookie") ?? "";
+    devCat = await createCategory("开发");
+    readCat = await createCategory("阅读");
+  });
+
+  it("writes category and global order together, landing on the drop index", async () => {
+    const a = await createLink({
+      title: "A",
+      categoryId: devCat,
+      sortOrder: 0,
+    });
+    const b = await createLink({
+      title: "B",
+      categoryId: devCat,
+      sortOrder: 1,
+    });
+    const c = await createLink({
+      title: "C",
+      categoryId: devCat,
+      sortOrder: 2,
+    });
+    const d = await createLink({
+      title: "D",
+      categoryId: readCat,
+      sortOrder: 3,
+    });
+    const e = await createLink({
+      title: "E",
+      categoryId: readCat,
+      sortOrder: 4,
+    });
+
+    // 把 B 拖进「阅读」并落在 D 之后（下标 3），不是目标分类末尾。
+    const ids = [a, c, d, b, e];
+    const res = await move({ linkId: b, categoryId: readCat, ids });
+
+    expect(res.status).toBe(200);
+    expect(await readJson(res)).toEqual({ success: true });
+
+    const links = await listLinks();
+    expect(links.map((l) => l.id)).toEqual(ids);
+    expect(links.map((l) => l.sortOrder)).toEqual([0, 1, 2, 3, 4]);
+    expect(links.find((l) => l.id === b)?.categoryId).toBe(readCat);
+    // 目标分类内次序来自 ids（落点即下标）：[D, B, E]，而非追加到末尾的 [D, E, B]
+    expect(
+      links.filter((l) => l.categoryId === readCat).map((l) => l.title),
+    ).toEqual(["D", "B", "E"]);
+    expect(
+      links.filter((l) => l.categoryId === devCat).map((l) => l.title),
+    ).toEqual(["A", "C"]);
+  });
+
+  it("also saves a pure reorder when categoryId is unchanged", async () => {
+    const a = await createLink({
+      title: "A",
+      categoryId: devCat,
+      sortOrder: 0,
+    });
+    const b = await createLink({
+      title: "B",
+      categoryId: devCat,
+      sortOrder: 1,
+    });
+    const c = await createLink({
+      title: "C",
+      categoryId: devCat,
+      sortOrder: 2,
+    });
+
+    const res = await move({ linkId: c, categoryId: devCat, ids: [c, a, b] });
+    expect(res.status).toBe(200);
+
+    const links = await listLinks();
+    expect(links.map((l) => l.id)).toEqual([c, a, b]);
+    expect(links.map((l) => l.sortOrder)).toEqual([0, 1, 2]);
+    expect(links.every((l) => l.categoryId === devCat)).toBe(true);
+  });
+
+  it("rolls the whole batch back when any statement fails (no half save)", async () => {
+    const a = await createLink({
+      title: "A",
+      categoryId: devCat,
+      sortOrder: 0,
+    });
+    const b = await createLink({
+      title: "B",
+      categoryId: devCat,
+      sortOrder: 1,
+    });
+    const c = await createLink({
+      title: "C",
+      categoryId: devCat,
+      sortOrder: 2,
+    });
+    const d = await createLink({
+      title: "D",
+      categoryId: readCat,
+      sortOrder: 3,
+    });
+
+    const before = rawLinks();
+    // 让 C 的 sort_order 写入失败：分组那一句先跑过，也必须跟着回滚。
+    sqlite().exec(
+      `CREATE TRIGGER abort_link_order BEFORE UPDATE ON links
+         WHEN NEW.id = '${c}' AND OLD.sort_order <> NEW.sort_order
+       BEGIN SELECT RAISE(ABORT, 'boom'); END;`,
+    );
+
+    const res = await move({
+      linkId: b,
+      categoryId: readCat,
+      ids: [a, c, d, b],
+    });
+    expect(res.status).toBe(500);
+    expect(await readJson(res)).toEqual({ error: "move failed" });
+
+    expect(rawLinks()).toEqual(before);
+  });
+
+  it("rejects malformed payloads in the frozen order and writes nothing", async () => {
+    const a = await createLink({
+      title: "A",
+      categoryId: devCat,
+      sortOrder: 0,
+    });
+    const b = await createLink({
+      title: "B",
+      categoryId: devCat,
+      sortOrder: 1,
+    });
+    const before = rawLinks();
+
+    const cases: [unknown, number, string][] = [
+      [{ categoryId: readCat, ids: [a] }, 400, "linkId is required"],
+      [
+        { linkId: "  ", categoryId: readCat, ids: [a] },
+        400,
+        "linkId is required",
+      ],
+      [{ linkId: a }, 400, "ids must be an array of link ids"],
+      [{ linkId: a, ids: "nope" }, 400, "ids must be an array of link ids"],
+      [{ linkId: a, ids: [a, 7] }, 400, "ids must be an array of link ids"],
+      [{ linkId: a, ids: [b] }, 400, "ids must contain linkId exactly once"],
+      [
+        { linkId: a, ids: [a, b, a] },
+        400,
+        "ids must contain linkId exactly once",
+      ],
+      [
+        { linkId: "ghost", categoryId: readCat, ids: ["ghost", a] },
+        404,
+        "not found",
+      ],
+      [
+        { linkId: a, categoryId: "ghost", ids: [a, b] },
+        400,
+        "categoryId does not exist",
+      ],
+      [{ linkId: a, ids: [a, b] }, 400, "categoryId does not exist"],
+    ];
+
+    for (const [payload, status, error] of cases) {
+      const res = await move(payload);
+      expect(res.status, JSON.stringify(payload)).toBe(status);
+      expect(await readJson(res)).toEqual({ error });
+      expect(rawLinks()).toEqual(before);
+    }
   });
 });
