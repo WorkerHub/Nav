@@ -203,6 +203,8 @@ export interface SiteSettingsDto {
   searchNewTab: boolean;
   /** 链接样式（settings key `link_style`）：缺省 `classic`，脏值同样归一。 */
   linkStyle: LinkStyle;
+  /** classic 砖块尺寸（settings key `tile_size`）：缺省 `large`，脏值同样归一。 */
+  tileSize: TileSize;
   /**
    * 首页链接卡是否显示网址（settings key `show_url`）：缺省 `true`（保持改动前的
    * 呈现）。与 `searchNewTab` 同一套 KV 布尔惯例，值 `"1"`/`"0"`。
@@ -302,6 +304,17 @@ export function isLinkStyle(value: unknown): value is LinkStyle {
   return (
     typeof value === "string" &&
     (LINK_STYLES as readonly string[]).includes(value)
+  );
+}
+
+/** settings key `tile_size` 的合法值；缺省与脏值一律按 `large`。 */
+export const TILE_SIZES = ["large", "medium", "small"] as const;
+export type TileSize = (typeof TILE_SIZES)[number];
+
+export function isTileSize(value: unknown): value is TileSize {
+  return (
+    typeof value === "string" &&
+    (TILE_SIZES as readonly string[]).includes(value)
   );
 }
 

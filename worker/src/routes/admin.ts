@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import {
   getTablePrefix,
   isLinkStyle,
+  isTileSize,
   isVisibility,
   type HonoEnv,
   type SiteSettingsDto,
@@ -667,6 +668,7 @@ const SETTING_KEYS = [
   "search_new_tab",
   "wallpaper_source",
   "link_style",
+  "tile_size",
   "show_url",
 ] as const;
 
@@ -725,6 +727,12 @@ adminRoutes.put("/settings", async (c) => {
     if (!isLinkStyle(body.linkStyle))
       return badRequest("linkStyle must be 'classic', 'compact' or 'wide'");
     updates.link_style = body.linkStyle;
+  }
+  if (body.tileSize !== undefined) {
+    // 同 linkStyle：三值枚举直接落库，非法值整包拒绝。
+    if (!isTileSize(body.tileSize))
+      return badRequest("tileSize must be 'large', 'medium' or 'small'");
+    updates.tile_size = body.tileSize;
   }
   if (body.showUrl !== undefined) {
     // 同 searchNewTab：KV 布尔惯例 "1"/"0"，非布尔值整包拒绝。

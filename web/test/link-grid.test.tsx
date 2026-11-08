@@ -2,6 +2,7 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import {
   CategorySection,
+  CLASSIC_ICON_BOX,
   LINK_ICON_BOX,
   LinkGrid,
 } from "@/components/link-grid";
@@ -284,6 +285,98 @@ describe("LinkGrid：classic 成块列数（站点设置 columns）", () => {
     );
 
     expect(grid(container)).toHaveStyle({ maxWidth: "899.5px" });
+  });
+});
+
+describe("LinkGrid：classic 砖块尺寸三档（tileSize）", () => {
+  it("三档的砖宽、图标盒、名称/网址字号与行组宽度同步变化", () => {
+    const cases = [
+      {
+        tileSize: "large" as const,
+        px: 141.5,
+        maxWidth: "1468px",
+        icon: 44,
+        titleClass: ["text-sm"],
+        urlClass: ["text-xs"],
+        gap: "gap-2",
+        padding: "py-3",
+      },
+      {
+        tileSize: "medium" as const,
+        px: 113,
+        maxWidth: "1240px",
+        icon: 36,
+        titleClass: ["text-[13px]", "leading-4"],
+        urlClass: ["text-xs"],
+        gap: "gap-1.5",
+        padding: "py-1.5",
+      },
+      {
+        tileSize: "small" as const,
+        px: 92,
+        maxWidth: "1072px",
+        icon: 28,
+        titleClass: ["text-xs"],
+        urlClass: ["text-[11px]", "leading-4"],
+        gap: "gap-1",
+        padding: "py-0.5",
+      },
+    ];
+
+    for (const c of cases) {
+      const { unmount } = render(
+        <LinkGrid links={links} tileSize={c.tileSize} />,
+      );
+
+      const link = screen.getByRole("link", { name: /GitHub/ });
+      expect(link).toHaveClass(`size-[${c.px}px]`, c.gap, c.padding);
+      // 图标盒按档缩小，且与导出常量同源
+      expect(CLASSIC_ICON_BOX[c.tileSize]).toBe(c.icon);
+      expect(iconBox(link, "classic")).toHaveStyle({
+        width: `${c.icon}px`,
+        height: `${c.icon}px`,
+      });
+      expect(screen.getByText("GitHub")).toHaveClass(...c.titleClass);
+      expect(screen.getByText("github.com")).toHaveClass(...c.urlClass);
+
+      unmount();
+    }
+  });
+
+  it("CategorySection 把 tileSize 透传给容器（medium 8 列 = 1240px）", () => {
+    const category: SiteCategory = {
+      id: "cat-dev",
+      name: "开发",
+      icon: null,
+      sceneId: "s_default",
+      sortOrder: 0,
+      links,
+    };
+
+    const { container } = render(
+      <CategorySection category={category} tileSize="medium" />,
+    );
+
+    expect(grid(container)).toHaveStyle({ maxWidth: "1240px" });
+  });
+
+  it("compact / wide 忽略 tileSize，排法与砖壳保持不变", () => {
+    const compact = render(
+      <LinkGrid links={links} linkStyle="compact" tileSize="small" />,
+    );
+    expect(grid(compact.container)).toHaveClass("lg:grid-cols-5");
+    expect(screen.getByRole("link", { name: /GitHub/ })).not.toHaveClass(
+      "size-[92px]",
+    );
+    compact.unmount();
+
+    const wide = render(
+      <LinkGrid links={links} linkStyle="wide" tileSize="medium" />,
+    );
+    expect(grid(wide.container)).toHaveClass("lg:grid-cols-3");
+    expect(screen.getByRole("link", { name: /GitHub/ })).not.toHaveClass(
+      "size-[113px]",
+    );
   });
 });
 

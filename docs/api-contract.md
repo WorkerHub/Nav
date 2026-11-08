@@ -96,6 +96,7 @@
     "columns": 0,
     "searchNewTab": true,
     "linkStyle": "classic",
+    "tileSize": "large",
     "showUrl": true
   }
 }
@@ -106,6 +107,8 @@
 `wallpaperSource`：首页壁纸来源，`bing`（默认，Bing 每日壁纸）| `custom`（用 `backgroundUrl` 自定义图）。存量库无此键时按 `bing` 返回。
 
 `linkStyle`：首页链接样式，`classic`（默认）| `compact` | `wide`。存量库无此键（或存量值不在枚举内）时按 `classic` 返回。
+
+`tileSize`：classic 砖块尺寸，`large`（默认，141.5px）| `medium`（113px）| `small`（92px）。存量库无此键（或存量值不在枚举内）时按 `large` 返回；仅作用于 classic 与首页编辑模式的方块，`compact` / `wide` 的排布不受影响。
 
 `showUrl`：首页链接卡是否显示网址，默认 `true`（保持改动前的呈现）。存量库无此键时按 `true` 返回。
 
@@ -221,8 +224,8 @@ Passkey（WebAuthn，/api/auth/passkey/*，@simplewebauthn/server v14）：
 
 ### 站点设置
 
-- `GET /api/admin/settings` → `{siteTitle, backgroundUrl, wallpaperSource, logoUrl, columns, searchNewTab, linkStyle, showUrl}`
-- `PUT /api/admin/settings` body 可含 `{siteTitle, backgroundUrl, wallpaperSource(bing|custom), logoUrl, columns(0–12), searchNewTab(boolean), linkStyle(classic|compact|wide), showUrl(boolean)}` → 更新后对象
+- `GET /api/admin/settings` → `{siteTitle, backgroundUrl, wallpaperSource, logoUrl, columns, searchNewTab, linkStyle, tileSize, showUrl}`
+- `PUT /api/admin/settings` body 可含 `{siteTitle, backgroundUrl, wallpaperSource(bing|custom), logoUrl, columns(0–12), searchNewTab(boolean), linkStyle(classic|compact|wide), tileSize(large|medium|small), showUrl(boolean)}` → 更新后对象
 
 主题（设深色/浅色）**不在**站点设置里：深浅色只由访客本机偏好（顶栏主题按钮，`localStorage` 键 `nav.visitor-theme`）决定，没有偏好时跟随系统外观。`PUT` 传 `theme` 不生效（白名单外的键一律忽略）；存量的 `settings.theme` 行不删不迁移，只是停产不用。
 
@@ -233,6 +236,8 @@ Passkey（WebAuthn，/api/auth/passkey/*，@simplewebauthn/server v14）：
 `wallpaperSource`：首页壁纸来源。存储键 `wallpaper_source`，值 `"bing"`/`"custom"`；库中**无此键**（存量库）时按 `bing` 返回。写入只接受 `bing`/`custom`，其他值返回 400 `wallpaperSource must be 'bing' or 'custom'`。
 
 `linkStyle`：首页链接样式。存储键 `link_style`，值 `"classic"`/`"compact"`/`"wide"`；库中**无此键**（存量库）时按 `classic` 返回，存量脏值同样归一为 `classic`（不改写库行）。写入只接受这三个字符串值（非字符串一律拒绝），其他值返回 400 `linkStyle must be 'classic', 'compact' or 'wide'`，且一次被拒的请求不会写入同包的任何设置键。
+
+`tileSize`：classic 砖块尺寸。存储键 `tile_size`，值 `"large"`（默认，砖 141.5px）/`"medium"`（113px）/`"small"`（92px）；库中**无此键**（存量库）时按 `large` 返回，存量脏值同样归一为 `large`（不改写库行）。写入只接受这三个字符串值（非字符串一律拒绝），其他值返回 400 `tileSize must be 'large', 'medium' or 'small'`，且一次被拒的请求不会写入同包的任何设置键。该值只影响 classic 与首页编辑模式的方砖；`compact` / `wide` 忽略它。
 
 `columns` 允许 `0–12`，其中 `0` 表示**未配置**（用默认值）：`0` 原样存入并原样返回，不会被替换成默认列数。`GET /api/admin/settings` 对未配置的库返回 `columns: 0`，所以 `0–12` 都能往返提交；超出范围返回 400 `columns must be between 0 and 12`。
 

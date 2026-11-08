@@ -197,6 +197,33 @@ describe("PublicPage 头部：时钟块取代顶栏", () => {
     expect(grid).toHaveStyle({ maxWidth: "1468px" });
   });
 
+  it("settings.tileSize 三档：行组与砖尺寸按档变化；缺省回 large", () => {
+    const cases = [
+      { tileSize: "large" as const, px: "141.5", maxWidth: "1468px" },
+      { tileSize: "medium" as const, px: "113", maxWidth: "1240px" },
+      { tileSize: "small" as const, px: "92", maxWidth: "1072px" },
+    ];
+
+    for (const c of cases) {
+      seedSite({ ...baseSettings, columns: 8, tileSize: c.tileSize });
+      const { unmount } = render(<PublicPage onOpenAdmin={vi.fn()} />);
+
+      const link = screen.getByRole("link", { name: /GitHub/ });
+      expect(link.parentElement?.parentElement).toHaveStyle({
+        maxWidth: c.maxWidth,
+      });
+      expect(link).toHaveClass(`size-[${c.px}px]`);
+      unmount();
+    }
+
+    // 旧后端 / 旧缓存没有 tileSize：与大号完全一致
+    seedSite({ ...baseSettings, columns: 8 });
+    render(<PublicPage onOpenAdmin={vi.fn()} />);
+    expect(screen.getByRole("link", { name: /GitHub/ })).toHaveClass(
+      "size-[141.5px]",
+    );
+  });
+
   it("compact / wide 不看 columns：各自排法不受影响", () => {
     seedSite({ ...baseSettings, columns: 5, linkStyle: "compact" });
     const compact = render(<PublicPage onOpenAdmin={vi.fn()} />);

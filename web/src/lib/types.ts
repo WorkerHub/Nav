@@ -65,6 +65,12 @@ export interface SearchEngine {
  */
 export type LinkStyle = "classic" | "compact" | "wide";
 
+/**
+ * classic 砖块尺寸（站点设置 `tileSize`）：`large`（141.5px）/`medium`（113px）/
+ * `small`（92px）。缺省 `large`；与 `linkStyle` 同为全站统一、访客不可切。
+ */
+export type TileSize = "large" | "medium" | "small";
+
 export interface SiteSettings {
   siteTitle: string;
   backgroundUrl: string;
@@ -82,6 +88,12 @@ export interface SiteSettings {
    * `resolveLinkStyle`（lib/link-style.ts）兜底 classic，与改动前的呈现一致。
    */
   linkStyle?: LinkStyle;
+  /**
+   * classic 砖块尺寸（后端 KV `tile_size`，缺省 `large`）。
+   * 声明为可选是有意的：后端该键未落地 / 浏览器里的旧缓存没有它时，读侧统一用
+   * `resolveTileSize`（lib/tile-size.ts）兜底 `large`，与 #35 的 141.5px 一致。
+   */
+  tileSize?: TileSize;
   /**
    * 首页链接卡是否显示网址（后端 KV `show_url`，缺省 true）。
    * 声明为可选同样是有意的：缺字段时读侧统一用 `resolveShowUrl`（lib/show-url.ts）

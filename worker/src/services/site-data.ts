@@ -1,5 +1,6 @@
 import {
   isLinkStyle,
+  isTileSize,
   type AdminSceneDto,
   type Category,
   type Link,
@@ -57,6 +58,8 @@ export function toSiteSettingsDto(
     linkStyle: isLinkStyle(settings.link_style)
       ? settings.link_style
       : "classic",
+    // 缺省/脏值一律归一 `large`：存量库没有该键时用大号方砖（即 #35 的 141.5px）。
+    tileSize: isTileSize(settings.tile_size) ? settings.tile_size : "large",
     // 存量库没有该键时按默认「开」：首页卡片照旧显示网址，与改动前一致。
     showUrl: (settings.show_url ?? "1") === "1",
   };

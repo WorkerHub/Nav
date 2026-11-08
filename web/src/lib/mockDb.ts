@@ -184,6 +184,7 @@ function seed(): MockState {
       columns: 8,
       searchNewTab: true,
       linkStyle: "classic",
+      tileSize: "large",
       showUrl: true,
     },
   };
@@ -193,7 +194,7 @@ function load(): MockState {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
-      // 旧 mock 库没有 searchNewTab / wallpaperSource / linkStyle / showUrl：按契约默认补齐，避免界面读到 undefined
+      // 旧 mock 库没有 searchNewTab / wallpaperSource / linkStyle / tileSize / showUrl：按契约默认补齐，避免界面读到 undefined
       const state = JSON.parse(raw) as Omit<MockState, "settings"> & {
         settings: Partial<SiteSettings> & { theme?: unknown };
       };
@@ -201,6 +202,7 @@ function load(): MockState {
         searchNewTab: true,
         wallpaperSource: "bing",
         linkStyle: "classic",
+        tileSize: "large",
         showUrl: true,
         ...state.settings,
       };

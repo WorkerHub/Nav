@@ -30,7 +30,7 @@ import {
   linkTileClassName,
 } from "@/components/link-grid";
 import { cn } from "@/lib/utils";
-import type { LinkStyle, SiteCategory, SiteLink } from "@/lib/types";
+import type { LinkStyle, SiteCategory, SiteLink, TileSize } from "@/lib/types";
 
 /**
  * 首页编辑模式的拖动看板（dnd-kit 原生多容器 Sortable）。
@@ -53,11 +53,11 @@ import type { LinkStyle, SiteCategory, SiteLink } from "@/lib/types";
  * 触屏：`TouchSensor` 长按 250ms 才激活（普通滑动照常滚动页面），`MouseSensor`
  * 位移 6px 激活（单击不被吃掉）。拖拽覆盖层用 dnd-kit 原生 `DragOverlay`。
  *
- * 尺寸口径：砖的格子由 `linkGridLayout(linkStyle, columns)` 给出（与普通模式同一个
- * 容器，classic 的成块列数取站点设置 `columns`）；classic 的砖壳是固定方砖
- * （`size-[141.5px]`），普通模式与编辑模式完全同尺寸，名称与网址在砖内单行截断
- * （`LinkTileContent` 的 `singleLine`）、悬停 `title` 看全称。✕ 角标定位在外层
- * 包一层上，自然落在方砖的右上角。拖拽预览用 dnd-kit 的 `DragOverlay`：包裹层
+ * 尺寸口径：砖的格子由 `linkGridLayout(linkStyle, columns, tileSize)` 给出（与普通模式
+ * 同一个容器，classic 的成块列数与砖块尺寸取站点设置 `columns` / `tileSize`）；classic
+ * 的砖壳是固定方砖（`size-[…]` 按三档静态类），普通模式与编辑模式完全同尺寸，名称与
+ * 网址在砖内单行截断（`LinkTileContent` 的 `singleLine`）、悬停 `title` 看全称。✕ 角标
+ * 定位在外层包一层上，自然落在方砖的右上角。拖拽预览用 dnd-kit 的 `DragOverlay`：包裹层
  * 尺寸由它按砖的实测矩形给定，砖规整后预览也就一致。
  *
  * 排布从「网格」改成「固定方砖 + 弹性换行 + 整块居中 + 末行左对齐」后，dnd-kit
@@ -186,11 +186,13 @@ export function resolveDropOrder({
 function EditableTile({
   link,
   linkStyle,
+  tileSize,
   onEdit,
   onRemove,
 }: {
   link: SiteLink;
   linkStyle: LinkStyle;
+  tileSize: TileSize;
   onEdit: (linkId: string) => void;
   onRemove: (linkId: string) => void;
 }) {
@@ -221,7 +223,7 @@ function EditableTile({
         aria-label={link.title}
         title={link.title}
         className={cn(
-          linkTileClassName(linkStyle),
+          linkTileClassName(linkStyle, tileSize),
           // compact / wide 仍在网格里，砖壳要撑满格子（<button> 的 width:auto 会按
           // 内容收缩，不补 w-full 的话长名称的砖会比旁边的窄）；classic 固定方砖，
           // 不能补 w-full，否则宽度被容器抢走
@@ -230,7 +232,12 @@ function EditableTile({
         )}
         onClick={() => onEdit(link.id)}
       >
-        <LinkTileContent link={link} linkStyle={linkStyle} singleLine />
+        <LinkTileContent
+          link={link}
+          linkStyle={linkStyle}
+          singleLine
+          tileSize={tileSize}
+        />
       </button>
       <button
         type="button"
@@ -277,11 +284,13 @@ function EndDropTarget({
 function AddLinkTile({
   category,
   linkStyle,
+  tileSize,
   empty,
   onAdd,
 }: {
   category: SiteCategory;
   linkStyle: LinkStyle;
+  tileSize: TileSize;
   /** 分类里还没有链接：此时它同时是该分类唯一的投放目标 */
   empty: boolean;
   onAdd: (categoryId: string) => void;
@@ -300,7 +309,7 @@ function AddLinkTile({
       title={`向「${category.name}」新增链接`}
       onClick={() => onAdd(category.id)}
       className={cn(
-        linkTileClassName(linkStyle),
+        linkTileClassName(linkStyle, tileSize),
         PLACEHOLDER_CLASS[linkStyle],
         // 同上一块砖：compact / wide 撑满格子，classic 保持固定方砖
         linkStyle !== "classic" && "w-full min-w-0",
@@ -323,6 +332,7 @@ export function HomeEditBoard({
   categories,
   linkStyle,
   columns,
+  tileSize = "large",
   privateCategories,
   onEditLink,
   onRemoveLink,
@@ -334,6 +344,8 @@ export function HomeEditBoard({
   linkStyle: LinkStyle;
   /** classic 成块列数（站点设置 `columns`，1–12）；缺省/0 回默认值，与普通模式同源 */
   columns?: number;
+  /** classic 砖块尺寸（站点设置 `tileSize`）；缺省 large，与普通模式同源 */
+  tileSize?: TileSize;
   /** 私有分类 id（显示「私有」徽标，与正常模式同口径） */
   privateCategories: ReadonlySet<string>;
   onEditLink: (linkId: string) => void;
@@ -446,7 +458,7 @@ export function HomeEditBoard({
   };
 
   const activeLink = activeId ? (linkById.get(activeId) ?? null) : null;
-  const { className, style } = linkGridLayout(linkStyle, columns);
+  const { className, style } = linkGridLayout(linkStyle, columns, tileSize);
 
   return (
     <DndContext
@@ -487,6 +499,7 @@ export function HomeEditBoard({
                           key={id}
                           link={link}
                           linkStyle={linkStyle}
+                          tileSize={tileSize}
                           onEdit={handleEdit}
                           onRemove={onRemoveLink}
                         />
@@ -496,6 +509,7 @@ export function HomeEditBoard({
                     <AddLinkTile
                       category={category}
                       linkStyle={linkStyle}
+                      tileSize={tileSize}
                       empty={ids.length === 0}
                       onAdd={onAddLink}
                     />
@@ -510,7 +524,7 @@ export function HomeEditBoard({
         {activeLink ? (
           <div
             className={cn(
-              linkTileClassName(linkStyle),
+              linkTileClassName(linkStyle, tileSize),
               "cursor-grabbing shadow-2xl",
             )}
           >
@@ -518,6 +532,7 @@ export function HomeEditBoard({
               link={activeLink}
               linkStyle={linkStyle}
               singleLine
+              tileSize={tileSize}
             />
           </div>
         ) : null}
