@@ -100,19 +100,22 @@ describe("LinkGrid：三档样式", () => {
     expect(box.querySelector("img")).toHaveClass("object-contain", "size-full");
   });
 
-  it("compact：透明无卡片底、单行名称、不显示域名，桌面 5 列", () => {
+  it("compact：透明无卡片底、单行名称、不显示域名，条目固定 240px、整块居中", () => {
     const { container } = render(
       <LinkGrid links={links} linkStyle="compact" />,
     );
 
     const compactGrid = grid(container);
+    // 定宽轨道 + 自动列数：轨道数就是成块列数，justify-center 把整块居中（末行仍从第 1 列起）
     expect(compactGrid).toHaveClass(
-      "grid-cols-2",
-      "sm:grid-cols-3",
-      "md:grid-cols-4",
-      "lg:grid-cols-5",
+      "grid",
+      "grid-cols-[repeat(auto-fill,240px)]",
+      "content-start",
+      "justify-center",
+      "gap-x-3",
+      "gap-y-2",
     );
-    expect(compactGrid).not.toHaveClass("grid-cols-4");
+    expect(compactGrid).not.toHaveClass("lg:grid-cols-5");
     // compact 不吃 classic 的排布参数
     expect(compactGrid.style.maxWidth).toBe("");
 
@@ -122,14 +125,26 @@ describe("LinkGrid：三档样式", () => {
     expect(link).not.toHaveClass("glass-hover");
     // 不显示域名
     expect(link).not.toHaveTextContent("github.com");
-    // 小图标在左、名称单行省略
+    // 24px 图标在左、名称单行省略
     expect(link).toHaveClass("items-center");
-    expect(link.querySelector("img")).toHaveAttribute("width", "20");
+    expect(link.querySelector("img")).toHaveAttribute(
+      "width",
+      String(LINK_ICON_BOX.compact),
+    );
+    expect(LINK_ICON_BOX.compact).toBe(24);
     expect(iconBox(link, "compact")).toHaveStyle({
-      width: "20px",
-      height: "20px",
+      width: `${LINK_ICON_BOX.compact}px`,
+      height: `${LINK_ICON_BOX.compact}px`,
     });
-    expect(link.querySelector("span.min-w-0")).toHaveClass("truncate");
+    // 名称 15px
+    expect(link.querySelector("span.min-w-0")).toHaveClass(
+      "truncate",
+      "text-[15px]",
+      "leading-5",
+    );
+    // 悬停只加极淡底色，不改文字/图标颜色
+    expect(link).toHaveClass("hover:bg-white/5");
+    expect(link).not.toHaveClass("hover:text-white");
   });
 
   it("wide：玻璃底宽卡，图标 56px 垂直居中、名称 + 域名两行，列模板 300–380px 封顶 + 整行居中", () => {
@@ -283,10 +298,8 @@ describe("LinkGrid：classic 成块列数（站点设置 columns）", () => {
       <LinkGrid links={links} linkStyle="compact" columns={5} />,
     );
     expect(grid(compact.container)).toHaveClass(
-      "grid-cols-2",
-      "sm:grid-cols-3",
-      "md:grid-cols-4",
-      "lg:grid-cols-5",
+      "grid-cols-[repeat(auto-fill,240px)]",
+      "justify-center",
     );
     expect(grid(compact.container).style.maxWidth).toBe("");
     compact.unmount();
@@ -401,7 +414,9 @@ describe("LinkGrid：classic 砖块尺寸三档（tileSize）", () => {
     const compact = render(
       <LinkGrid links={links} linkStyle="compact" tileSize="small" />,
     );
-    expect(grid(compact.container)).toHaveClass("lg:grid-cols-5");
+    expect(grid(compact.container)).toHaveClass(
+      "grid-cols-[repeat(auto-fill,240px)]",
+    );
     expect(screen.getByRole("link", { name: /GitHub/ })).not.toHaveClass(
       "w-[92px]",
       "h-[119px]",
@@ -447,7 +462,7 @@ describe("LinkGrid：显示网址开关（showUrl，缺省开）", () => {
     const link = screen.getByRole("link", { name: /GitHub/ });
     expect(link).not.toHaveTextContent("github.com");
     expect(link).toHaveClass("items-center");
-    expect(grid(container)).toHaveClass("lg:grid-cols-5");
+    expect(grid(container)).toHaveClass("grid-cols-[repeat(auto-fill,240px)]");
   });
 
   it("不传 showUrl（编辑模式口径）：classic / wide 仍显示域名", () => {

@@ -18,7 +18,9 @@ import { cn } from "@/lib/utils";
  *    成块、高按同档图标盒与文字行数反推），图标盒固定占砖宽 60%；站点设置
  *    `columns`（1–12）是**成块列数**：桌面按这个数成块、整块居中，窄屏放不下
  *    整块时一行自然少放几块（0/未配置回默认 8）；
- *  - compact：小图标左、名称右（单行省略），透明无卡片底、不显示域名，桌面 5 列；
+ *  - compact：24px 小图标左、15px 名称右（单行省略），透明无卡片底（只在悬停时
+ *    给一层 5% 白底表示可点）、不显示域名；条目固定 240px，按 #35 的成块模型
+ *    排布（整块居中、末行左对齐到满行列位）；
  *  - wide：玻璃底宽卡，图标（56px、垂直居中）左、右侧名称 + 域名两行；列模板
  *    `repeat(auto-fill, minmax(min(300px, 100%), 380px))` —— 卡宽封顶 300–380px，
  *    桌面一行多张、整行居中，窄屏自然折行，卡不再把整行撑满。
@@ -41,6 +43,13 @@ import { cn } from "@/lib/utils";
  * （classic 是定宽定高的砖、compact / wide 撑满格子；单击打开编辑弹窗，不跳转），并传
  * `singleLine` 让名称与网址各占一行、超长截断省略号（悬停 `title` 看全称）。
  *
+ * compact 的排布模型（规格已定版）：条目固定 240px，容器是 **CSS 网格** ——
+ * `repeat(auto-fill, 240px)` 的轨道数就是「成块列数」（floor((容宽 + gap) /
+ * (240 + gap))，gap 天然算进去），`justify-center` 让整块水平居中、末行从第 1
+ * 列起排。这与 classic 的 `maxWidth = columns*砖宽 + (columns-1)*gap` + `mx-auto`
+ * 是同一几何结果，但 compact 的列数不来自站点设置，用 CSS 自动排即可，无需
+ * 测量容器宽度（也就没有首帧闪动与 jsdom 量不到的测试难题）。
+ *
  * classic 的排布模型（规格已定版）：定宽定高的砖（宽度按站点设置 `tileSize`
  * 从 `CLASSIC_TILE_WIDTH_CLASS` 取、高度从 `CLASSIC_TILE_HEIGHT_CLASS` 取，都是静态类）
  * + flex 换行 + **整块居中 + 末行左对齐**。
@@ -62,6 +71,12 @@ import { cn } from "@/lib/utils";
  * 也不会为了居中而整体右移。`w-full` 给 `column-gap` 的百分比一个确定基准；间距
  * 与行组宽度来自 `linkGridLayout`（lib/grid-columns.ts 的 `classicGridMetrics`）。
  *
+ * compact 是定宽轨道的网格：`repeat(auto-fill, 240px)` 先按容器宽度定下「成块
+ * 列数」，`justify-center` 把整组轨道居中（满行块宽 = 列数×240 + 间隔×gap），末行
+ * 因此仍从第 1 列起排、与满行同列对齐；`content-start` 让行不被拉伸。240 与
+ * `gap-x-3` 都是字面量（Tailwind 只扫字面量，改任一值须同步这里），条目宽度由
+ * 轨道给定，砖壳无须再写 `w-[240px]`。
+ *
  * wide 用 CSS Grid 的 `auto-fill` 列模板（规格已定版）：轨道在 300–380px 之间，
  * 一行放得下几张就放几张，多出来的宽度被 `justify-center` 对称留在两侧 —— 卡不再
  * 被拉成整行宽。用 `auto-fill`（不是 `auto-fit`）：空轨道保留，末行的卡仍落在与
@@ -72,7 +87,7 @@ import { cn } from "@/lib/utils";
 export const LINK_GRID_CLASS: Record<LinkStyle, string> = {
   classic: "mx-auto flex w-full flex-wrap content-start justify-start gap-y-3",
   compact:
-    "grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5",
+    "grid grid-cols-[repeat(auto-fill,240px)] content-start justify-center gap-x-3 gap-y-2",
   wide: "grid gap-3 justify-center grid-cols-[repeat(auto-fill,minmax(min(300px,100%),380px))]",
 };
 
@@ -110,14 +125,14 @@ export const CLASSIC_ICON_BOX: Record<TileSize, number> = {
 
 /**
  * 图标盒边长（px，按链接样式分档）：同一档内所有链接共用一个定值，图标盒因此
- * 全站同档同尺寸。compact 20（与改动前一致）、wide 56（图标在宽卡里垂直居中，
- * 卡高 ≈ 56 + 上下内距 + 边框 ≈ 82px）、classic 取大档的 60% 图标盒边长（逐档值
- * 见 `CLASSIC_ICON_BOX`），不改图标本身的圆角与背景。
+ * 全站同档同尺寸。compact 24（条目放大到 240px 宽后的点选口径）、wide 56（图标在
+ * 宽卡里垂直居中，卡高 ≈ 56 + 上下内距 + 边框 ≈ 82px）；classic 取大档的 60%
+ * 图标盒边长（逐档值见 `CLASSIC_ICON_BOX`），不改图标本身的圆角与背景。
  */
 export const LINK_ICON_BOX: Record<LinkStyle, number> = {
   classic: CLASSIC_ICON_BOX.large,
   wide: 56,
-  compact: 20,
+  compact: 24,
 };
 
 /**
@@ -163,7 +178,9 @@ export function linkTileClassName(
   tileSize: TileSize = "large",
 ): string {
   if (linkStyle === "compact") {
-    return "flex h-full items-center gap-2 rounded-xl px-2 py-2 text-start text-white/90 transition-colors hover:bg-white/10 hover:text-white";
+    // 24px 图标 + py-2.5 上下内距 = 44px 高的点选区；悬停只给一层极淡的白底，
+    // 不动文字与图标颜色（规格 3）。
+    return "flex h-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-start text-white/90 transition-colors hover:bg-white/5";
   }
   if (linkStyle === "wide") {
     return "glass glass-hover flex h-full items-center gap-3 rounded-2xl px-4 py-3 text-start";
@@ -248,7 +265,10 @@ export function LinkTileContent({
     return (
       <>
         <LinkIcon link={link} linkStyle="compact" />
-        <span title={titleAttr} className="min-w-0 flex-1 truncate text-sm">
+        <span
+          title={titleAttr}
+          className="min-w-0 flex-1 truncate text-[15px] leading-5"
+        >
           {link.title}
         </span>
       </>
@@ -334,7 +354,7 @@ function LinkTile({
   );
 }
 
-/** 紧凑：小图标左、名称右；无卡片底、不显示域名 */
+/** 紧凑：24px 图标左、15px 名称右（截断省略号）；无卡片底、不显示域名 */
 function CompactLinkTile({
   link,
   index,
