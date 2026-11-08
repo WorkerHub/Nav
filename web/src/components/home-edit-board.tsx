@@ -88,13 +88,14 @@ const collisionDetection: CollisionDetection = (args) => {
 };
 
 /**
- * compact / wide 的「+」砖高度。wide 要估：图标 36 + 一行名称 + 一行域名，固定
- * `min-h-[62px]`。compact 不列在这里：它的「+」砖高度由 24px 图标 + 砖壳内距
+ * wide 的「+」砖高度：图标 56 + 一行名称 + 一行域名（卡高 ≈ 56 + 上下内距 12×2 +
+ * 1px 边框 ×2 = 82px，文字两行 36px 还矮于图标，所以按图标算），固定
+ * `min-h-[82px]`。compact 不列在这里：它的「+」砖高度由 24px 图标 + 砖壳内距
  * 自然决定（与普通砖同尺寸），不必再估。classic 也不列：它直接拿砖壳的定宽定高
  * 类（`w-[…] h-[…]`）。
  */
 const PLACEHOLDER_CLASS: Partial<Record<LinkStyle, string>> = {
-  wide: "min-h-[62px]",
+  wide: "min-h-[82px]",
 };
 
 type Order = Record<string, string[]>;
