@@ -82,6 +82,12 @@ export interface SiteSettings {
    * `resolveLinkStyle`（lib/link-style.ts）兜底 classic，与改动前的呈现一致。
    */
   linkStyle?: LinkStyle;
+  /**
+   * 首页链接卡是否显示网址（后端 KV `show_url`，缺省 true）。
+   * 声明为可选同样是有意的：缺字段时读侧统一用 `resolveShowUrl`（lib/show-url.ts）
+   * 兜底 true，即与改动前完全一致的呈现。编辑模式不走这个开关。
+   */
+  showUrl?: boolean;
 }
 
 export interface SiteData {

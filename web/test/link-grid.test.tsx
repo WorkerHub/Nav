@@ -132,3 +132,60 @@ describe("CategorySection：把样式透传给网格，锚点偏移随顶栏移�
     expect(screen.getByRole("link", { name: /GitHub/ })).toHaveClass("glass");
   });
 });
+
+describe("LinkGrid：显示网址开关（showUrl，缺省开）", () => {
+  it("classic 档 showUrl=false：只留图标与名称，不渲染域名行", () => {
+    render(<LinkGrid links={links} showUrl={false} />);
+
+    const link = screen.getByRole("link", { name: /GitHub/ });
+    expect(link).toHaveTextContent("GitHub");
+    expect(link).not.toHaveTextContent("github.com");
+  });
+
+  it("wide 档 showUrl=false：右侧只剩名称一行，不渲染域名", () => {
+    render(<LinkGrid links={links} linkStyle="wide" showUrl={false} />);
+
+    const link = screen.getByRole("link", { name: /GitHub/ });
+    expect(link).toHaveClass("glass", "glass-hover");
+    expect(link).toHaveTextContent("GitHub");
+    expect(link).not.toHaveTextContent("github.com");
+  });
+
+  it("compact 档本来就不渲染域名：开关不改变它的形状", () => {
+    const { container } = render(
+      <LinkGrid links={links} linkStyle="compact" showUrl={false} />,
+    );
+
+    const link = screen.getByRole("link", { name: /GitHub/ });
+    expect(link).not.toHaveTextContent("github.com");
+    expect(link).toHaveClass("items-center");
+    expect(grid(container)).toHaveClass("lg:grid-cols-5");
+  });
+
+  it("不传 showUrl（编辑模式口径）：classic / wide 仍显示域名", () => {
+    for (const style of ["classic", "wide"] as LinkStyle[]) {
+      const { unmount } = render(<LinkGrid links={links} linkStyle={style} />);
+      expect(screen.getByRole("link", { name: /GitHub/ })).toHaveTextContent(
+        "github.com",
+      );
+      unmount();
+    }
+  });
+
+  it("CategorySection 把 showUrl 透传给网格", () => {
+    const category: SiteCategory = {
+      id: "cat-dev",
+      name: "开发",
+      icon: null,
+      sceneId: "s_default",
+      sortOrder: 0,
+      links,
+    };
+
+    render(<CategorySection category={category} showUrl={false} />);
+
+    expect(screen.getByRole("link", { name: /GitHub/ })).not.toHaveTextContent(
+      "github.com",
+    );
+  });
+});

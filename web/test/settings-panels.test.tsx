@@ -200,6 +200,61 @@ describe("SettingsPanel：搜索在新标签页打开开关（默认开）", () 
   });
 });
 
+describe("SettingsPanel：显示网址开关（默认开）", () => {
+  beforeEach(() => {
+    uploadMock.mockReset();
+    updateSettingsMock.mockReset();
+    updateSettingsMock.mockImplementation(async (input) => ({
+      ...baseSettings,
+      ...input,
+    }));
+  });
+
+  it("默认开：保存时提交 showUrl=true", async () => {
+    const user = userEvent.setup();
+
+    render(<SettingsPanel settings={baseSettings} onChanged={vi.fn()} />);
+
+    const toggle = screen.getByLabelText("显示网址");
+    expect(toggle).toBeChecked();
+
+    await user.click(screen.getByRole("button", { name: "保存设置" }));
+
+    await waitFor(() => expect(updateSettingsMock).toHaveBeenCalledTimes(1));
+    expect(updateSettingsMock.mock.calls[0][0]).toMatchObject({
+      showUrl: true,
+    });
+  });
+
+  it("关闭开关后保存 showUrl=false", async () => {
+    const user = userEvent.setup();
+
+    render(<SettingsPanel settings={baseSettings} onChanged={vi.fn()} />);
+
+    const toggle = screen.getByLabelText("显示网址");
+    await user.click(toggle);
+    expect(toggle).not.toBeChecked();
+
+    await user.click(screen.getByRole("button", { name: "保存设置" }));
+
+    await waitFor(() => expect(updateSettingsMock).toHaveBeenCalledTimes(1));
+    expect(updateSettingsMock.mock.calls[0][0]).toMatchObject({
+      showUrl: false,
+    });
+  });
+
+  it("旧数据缺该字段时按默认开显示，不会因 undefined 变关", () => {
+    render(
+      <SettingsPanel
+        settings={{ ...baseSettings, showUrl: undefined as never }}
+        onChanged={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByLabelText("显示网址")).toBeChecked();
+  });
+});
+
 describe("SettingsPanel：壁纸来源切换（默认 Bing）", () => {
   beforeEach(() => {
     uploadMock.mockReset();
