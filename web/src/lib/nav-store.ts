@@ -1,3 +1,4 @@
+import { toast } from "sonner";
 import { create } from "zustand";
 import {
   getPrivate,
@@ -7,7 +8,9 @@ import {
   loginPassword,
   logout as apiLogout,
   verifyTotp as apiVerifyTotp,
+  adminDeleteLink,
   adminListAll,
+  adminMoveLink,
   adminReorderCategories,
   adminReorderEngines,
   adminReorderLinks,
@@ -17,10 +20,13 @@ import {
   type AdminData,
   type LoginResult,
 } from "@/lib/api";
+import { buildMoveIds } from "@/lib/link-order";
 import type {
+  AdminLink,
   PrivateData,
   PublicData,
   SearchEngine,
+  SiteLink,
   SiteSettings,
 } from "@/lib/types";
 
@@ -57,7 +63,8 @@ let settingsRevision = 0;
  */
 function clearAdminSession() {
   resetAdminOrderState();
-  return { privateData: null, adminData: null } as const;
+  resetHomeEditState();
+  return { privateData: null, adminData: null, editMode: false } as const;
 }
 
 /**
@@ -74,6 +81,11 @@ interface NavState {
   error: string | null;
   /** 后台数据（分类/链接/引擎/设置），登录后加载 */
   adminData: AdminData | null;
+  /**
+   * 首页编辑模式：纯前端本地状态（不持久化、不进站点设置），刷新即回正常模式。
+   * 编辑模式的写口径是 adminData，privateData 每次写入后同步投影（成功不整表重拉）。
+   */
+  editMode: boolean;
 
   /** 启动探活：刷新后恢复登录态（pending → authenticated/anonymous） */
   bootstrapSession: () => Promise<void>;
@@ -102,6 +114,34 @@ interface NavState {
    * PUT（全局 MAX+1）是链接顺序相关写入的最后一次。
    */
   settleLinkOrder: () => Promise<void>;
+
+  // ── 首页编辑模式 ──────────────────────────────────────────────────────────
+  /**
+   * 进入首页编辑模式：先排空后台面板在飞的链接排序，再拉一份最新后台数据
+   * （编辑模式以 adminData 为写口径）。未登录 / 失败返回 false，不进入。
+   */
+  enterEditMode: () => Promise<boolean>;
+  /** 退出编辑模式：待落库的删除立即落库（撤销窗口随之结束） */
+  exitEditMode: () => void;
+  /**
+   * 首页拖动一块链接砖：乐观改分组 + 全局顺序，串行发 `POST /links/move`。
+   * 成功不整表重拉；终止失败把本轮快照（顺序 + 分组）整体回滚并抛错。
+   */
+  moveLinkOnHome: (input: {
+    linkId: string;
+    categoryId: string;
+    /** 落点前一块的 id（null = 目标分类的第一个位置） */
+    afterId: string | null;
+  }) => Promise<void>;
+  /** 首页角标删除：立即移除 + 带撤销的 toast，约 5 秒后才落库 */
+  removeLinkOnHome: (linkId: string) => void;
+  /** 撤销待落库的删除：只恢复本地（不发请求） */
+  undoRemoveLink: (linkId: string) => void;
+  /** 退出编辑模式 / 页面卸载：待落库的删除立即落库 */
+  flushPendingLinkDeletes: () => void;
+  /** 后台链接弹窗保存后：就地替换 store 里的链接并投影（不重拉） */
+  applyEditedLink: (link: AdminLink) => void;
+
   /** 设置保存成功后就地刷新 store 里所有存活的 settings 切片（三片原子更新） */
   patchAdminSettings: (settings: SiteSettings) => void;
   loadPrivate: () => Promise<void>;
@@ -125,6 +165,7 @@ export const useNavStore = create<NavState>((set, get) => ({
   loginPromptOpen: false,
   error: null,
   adminData: null,
+  editMode: false,
 
   bootstrapSession: () => {
     if (sessionProbe) return sessionProbe;
@@ -268,6 +309,127 @@ export const useNavStore = create<NavState>((set, get) => ({
     track.localIds = null;
     track.pendingIds = null;
     track.beforeIds = null;
+  },
+
+  enterEditMode: () => {
+    if (get().authStatus !== "authenticated") return Promise.resolve(false);
+    if (get().editMode) return Promise.resolve(true);
+    if (editEntryInFlight) return editEntryInFlight;
+    const token = editEntryToken;
+    editEntryInFlight = (async () => {
+      try {
+        // 后台链接面板可能还有一次排序在飞：它落库后会把 sort_order 写回旧槽位，
+        // 必须排在编辑模式的第一次拖动之前（顺带作废本地顺序簿记）。
+        await get().settleLinkOrder();
+        // 编辑模式的写入以 adminData 为准、显示走 privateData 的投影；两者缺一不可。
+        if (!get().privateData) await get().loadPrivate();
+        const privateData = get().privateData;
+        if (!privateData || get().authStatus !== "authenticated") return false;
+        const data = await adminListAll();
+        // 拉数据期间已经退出/登出/卸载：不要事后把编辑模式点亮
+        if (token !== editEntryToken) return false;
+        set({
+          editMode: true,
+          adminData: data,
+          privateData: projectPrivateData(data, privateData),
+        });
+        return true;
+      } catch (e) {
+        // 与 loadAdmin 同口径：会话失效回落到未登录并弹登录，其余失败只返回 false
+        if (e instanceof ApiError && e.status === 401) {
+          set({
+            ...clearAdminSession(),
+            authStatus: "anonymous",
+            loginPromptOpen: true,
+          });
+        }
+        return false;
+      } finally {
+        editEntryInFlight = null;
+      }
+    })();
+    return editEntryInFlight;
+  },
+
+  exitEditMode: () => {
+    // 让还在拉数据的 enterEditMode 落地时不再把编辑模式打开（例如点完铅笔立刻离开页面）
+    editEntryToken += 1;
+    set({ editMode: false });
+    // 撤销窗口随退出结束：待删的立即落库（失败会插回原位并 toast）
+    get().flushPendingLinkDeletes();
+  },
+
+  moveLinkOnHome: ({ linkId, categoryId, afterId }) => {
+    const data = get().adminData;
+    if (!data) return Promise.resolve();
+    const ids = buildMoveIds(data.links, linkId, categoryId, afterId);
+    // 「一次突发」只在第一次拖动取快照：中途连续拖的几次失败时一起回到这里
+    homeMoves.snapshot ??= data.links;
+    const next: AdminData = {
+      ...data,
+      links: applyOrder<AdminLink>(data.links, ids).map((link) =>
+        link.id === linkId ? { ...link, categoryId } : link,
+      ),
+    };
+    set((state) => ({
+      adminData: next,
+      ...editProjection(next, state.privateData),
+    }));
+    return enqueueHomeMove({ linkId, categoryId, ids });
+  },
+
+  removeLinkOnHome: (linkId) => {
+    const data = get().adminData;
+    if (!data || pendingLinkDeletes.has(linkId)) return;
+    const ordered = [...data.links].sort((a, b) => a.sortOrder - b.sortOrder);
+    const index = ordered.findIndex((link) => link.id === linkId);
+    if (index < 0) return;
+    const link = ordered[index];
+    const prevId = index > 0 ? ordered[index - 1].id : null;
+    const next: AdminData = {
+      ...data,
+      links: data.links.filter((item) => item.id !== linkId),
+    };
+    set((state) => ({
+      adminData: next,
+      ...editProjection(next, state.privateData),
+    }));
+    const toastId = toast(`已删除「${link.title}」`, {
+      duration: LINK_DELETE_DELAY_MS,
+      action: { label: "撤销", onClick: () => get().undoRemoveLink(linkId) },
+    });
+    const timer = setTimeout(() => {
+      void commitLinkDelete(linkId);
+    }, LINK_DELETE_DELAY_MS);
+    pendingLinkDeletes.set(linkId, { link, prevId, timer, toastId });
+  },
+
+  undoRemoveLink: (linkId) => {
+    const record = pendingLinkDeletes.get(linkId);
+    if (!record) return;
+    clearTimeout(record.timer);
+    pendingLinkDeletes.delete(linkId);
+    toast.dismiss(record.toastId);
+    restoreDeletedLink(record);
+  },
+
+  flushPendingLinkDeletes: () => {
+    for (const linkId of [...pendingLinkDeletes.keys()]) {
+      void commitLinkDelete(linkId);
+    }
+  },
+
+  applyEditedLink: (link) => {
+    const data = get().adminData;
+    if (!data || !data.links.some((item) => item.id === link.id)) return;
+    const next: AdminData = {
+      ...data,
+      links: data.links.map((item) => (item.id === link.id ? link : item)),
+    };
+    set((state) => ({
+      adminData: next,
+      ...editProjection(next, state.privateData),
+    }));
   },
 
   defaultEngine: () => {
@@ -631,4 +793,213 @@ async function flushReorder(
   }
   void useNavStore.getState().loadAdmin();
   throw error;
+}
+
+// ─── 首页编辑模式 ────────────────────────────────────────────────────────────
+//
+// 首页编辑模式以 adminData 为**写口径**（乐观写、串行发送），privateData 是公开页
+// 真正渲染的数据，每次写入后同步投影一次 —— 成功不整表重拉，退出编辑模式也不回跳。
+// 删除是延迟落库的：先本地移除、给约 5 秒撤销窗口，窗口结束 / 退出编辑模式才真删除。
+
+/** 撤销窗口：窗口内的删除不发任何请求（撤销只恢复本地，服务端从未删过） */
+const LINK_DELETE_DELAY_MS = 5000;
+
+/** 进入编辑模式的一次性请求（连点两次不并发拉数据） */
+let editEntryInFlight: Promise<boolean> | null = null;
+/** 进入编辑模式的世代号：退出 / 会话结束自增，让在飞的 enter 不再落地 */
+let editEntryToken = 0;
+
+interface QueuedHomeMove {
+  linkId: string;
+  categoryId: string;
+  ids: string[];
+  resolve: () => void;
+  reject: (error: unknown) => void;
+}
+
+const homeMoves: {
+  /** 本轮（一次连续拖动）开始前的 links 快照：失败时顺序 + 分组一起回到这里 */
+  snapshot: AdminLink[] | null;
+  queue: QueuedHomeMove[];
+  running: boolean;
+} = { snapshot: null, queue: [], running: false };
+
+interface PendingLinkDelete {
+  link: AdminLink;
+  /** 删除前的全局前驱：撤销 / 落库失败时据此插回原位 */
+  prevId: string | null;
+  timer: ReturnType<typeof setTimeout>;
+  toastId: string | number;
+}
+
+const pendingLinkDeletes = new Map<string, PendingLinkDelete>();
+
+function toSiteLink(link: AdminLink): SiteLink {
+  return {
+    id: link.id,
+    categoryId: link.categoryId,
+    title: link.title,
+    url: link.url,
+    iconUrl: link.iconUrl,
+    description: link.description,
+    sortOrder: link.sortOrder,
+  };
+}
+
+/**
+ * 把 adminData 投影成公开页消费的 privateData.categories。
+ * 分类与组内链接都按 sortOrder 排，场景 / 引擎 / 设置原样保留（本单不动它们）。
+ */
+function projectPrivateData(data: AdminData, prev: PrivateData): PrivateData {
+  const linksByCategory = new Map<string, SiteLink[]>();
+  for (const link of [...data.links].sort(
+    (a, b) => a.sortOrder - b.sortOrder,
+  )) {
+    const bucket = linksByCategory.get(link.categoryId) ?? [];
+    bucket.push(toSiteLink(link));
+    linksByCategory.set(link.categoryId, bucket);
+  }
+  const categories = [...data.categories]
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+    .map((category) => ({
+      id: category.id,
+      name: category.name,
+      icon: category.icon,
+      sceneId: category.sceneId,
+      sortOrder: category.sortOrder,
+      links: linksByCategory.get(category.id) ?? [],
+    }));
+  return { ...prev, categories };
+}
+
+/** set() 里用：privateData 未加载时不做投影（不凭空造数据） */
+function editProjection(data: AdminData, prev: PrivateData | null) {
+  return prev ? { privateData: projectPrivateData(data, prev) } : {};
+}
+
+function enqueueHomeMove(op: {
+  linkId: string;
+  categoryId: string;
+  ids: string[];
+}): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    homeMoves.queue.push({ ...op, resolve, reject });
+    if (!homeMoves.running) {
+      homeMoves.running = true;
+      void drainHomeMoves();
+    }
+  });
+}
+
+/**
+ * 首页拖动的发送循环：同一时刻只有一个 `POST /links/move` 在飞，按用户操作顺序逐条发。
+ * 每条请求带的是它那一刻重建的全局 ids；串行发送保证后一次写入不会先落地、被前一次覆盖。
+ * 终止失败时本轮全部乐观写入（含排队中还没发的）一起回滚到快照，并只让失败那条 reject
+ * （由看板 toast 一次），排队中的直接 resolve，不再重复报错。
+ */
+async function drainHomeMoves(): Promise<void> {
+  const epoch = sessionEpoch;
+  const stale = () => epoch !== sessionEpoch;
+  try {
+    for (;;) {
+      const op = homeMoves.queue.shift();
+      if (!op) break;
+      try {
+        await adminMoveLink({
+          linkId: op.linkId,
+          categoryId: op.categoryId,
+          ids: op.ids,
+        });
+        op.resolve();
+        if (stale()) return; // 旧会话的请求落地：不再写 store
+      } catch (error) {
+        if (stale()) {
+          op.resolve();
+          continue;
+        }
+        const pending = homeMoves.queue.splice(0);
+        const snapshot = homeMoves.snapshot;
+        homeMoves.snapshot = null;
+        op.reject(error);
+        for (const rest of pending) rest.resolve();
+        if (snapshot) {
+          const current = useNavStore.getState().adminData;
+          if (current) {
+            const rolledBack: AdminData = { ...current, links: snapshot };
+            useNavStore.setState((state) => ({
+              adminData: rolledBack,
+              ...editProjection(rolledBack, state.privateData),
+            }));
+          }
+        }
+        return;
+      }
+    }
+    homeMoves.snapshot = null; // 本轮全部落库，下一次拖动重新取快照
+  } finally {
+    // 旧会话的循环不得清掉新会话正在跑的循环的 running
+    if (!stale()) homeMoves.running = false;
+  }
+}
+
+async function commitLinkDelete(linkId: string): Promise<void> {
+  const record = pendingLinkDeletes.get(linkId);
+  if (!record) return;
+  pendingLinkDeletes.delete(linkId);
+  clearTimeout(record.timer);
+  toast.dismiss(record.toastId);
+  try {
+    await adminDeleteLink(linkId);
+  } catch (error) {
+    // 落库失败：服务端没删，界面必须把这一块放回去
+    restoreDeletedLink(record);
+    toast.error(`删除失败：${(error as Error).message}`);
+  }
+}
+
+/**
+ * 把被撤下（撤销 / 删除失败）的链接插回删除前的位置：锚定它删除前的前驱 id，
+ * 再按新顺序本地重编号（不发请求 —— 删除请求还没发过，服务端本来就是原顺序）。
+ */
+function restoreDeletedLink(record: PendingLinkDelete): void {
+  const data = useNavStore.getState().adminData;
+  if (!data || data.links.some((link) => link.id === record.link.id)) return;
+  const ordered = [...data.links].sort((a, b) => a.sortOrder - b.sortOrder);
+  const anchorIndex = record.prevId
+    ? ordered.findIndex((link) => link.id === record.prevId)
+    : -1;
+  const insertAt = anchorIndex >= 0 ? anchorIndex + 1 : 0;
+  const byId = new Map<string, AdminLink>();
+  for (const link of data.links) byId.set(link.id, link);
+  byId.set(record.link.id, record.link);
+  const ids = ordered.map((link) => link.id);
+  ids.splice(insertAt, 0, record.link.id);
+  const links: AdminLink[] = [];
+  ids.forEach((id, index) => {
+    const link = byId.get(id);
+    if (link) links.push({ ...link, sortOrder: index });
+  });
+  const next: AdminData = { ...data, links };
+  useNavStore.setState((state) => ({
+    adminData: next,
+    ...editProjection(next, state.privateData),
+  }));
+}
+
+/**
+ * 清空首页编辑的队列与待删计时器（会话结束 / 测试隔离）。
+ * 已发出的请求不可取消，靠 sessionEpoch 让旧循环静默退出。
+ */
+export function resetHomeEditState(): void {
+  sessionEpoch += 1;
+  editEntryToken += 1;
+  homeMoves.snapshot = null;
+  homeMoves.queue.splice(0);
+  homeMoves.running = false;
+  for (const record of pendingLinkDeletes.values()) {
+    clearTimeout(record.timer);
+    toast.dismiss(record.toastId);
+  }
+  pendingLinkDeletes.clear();
+  editEntryInFlight = null;
 }

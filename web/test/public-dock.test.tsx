@@ -39,6 +39,7 @@ function renderDock(
     scenes?: Scene[];
     activeScene?: string | null;
     authStatus?: AuthStatus;
+    editMode?: boolean;
   } = {},
 ) {
   const props = {
@@ -46,6 +47,8 @@ function renderDock(
     activeScene: null as string | null,
     onSceneChange: vi.fn(),
     authStatus: "anonymous" as AuthStatus,
+    editMode: false,
+    onToggleEdit: vi.fn(),
     onOpenAdmin: vi.fn(),
     onLogin: vi.fn(),
     onLogout: vi.fn(),
@@ -86,6 +89,7 @@ describe("PublicDock：右下角单图标宽竖排轨道", () => {
 
     const scoped = within(dock());
     expect(scoped.queryByRole("button", { name: "登录" })).toBeNull();
+    expect(scoped.queryByRole("button", { name: "编辑" })).toBeNull();
     expect(scoped.queryByRole("button", { name: "后台" })).toBeNull();
     expect(scoped.queryByRole("button", { name: "退出" })).toBeNull();
     // 主题是本机偏好，不受登录态影响
@@ -122,6 +126,41 @@ describe("PublicDock：右下角单图标宽竖排轨道", () => {
     expect(props.onOpenAdmin).toHaveBeenCalledTimes(1);
     expect(props.onLogout).toHaveBeenCalledTimes(1);
     expect(props.onLogin).not.toHaveBeenCalled();
+  });
+
+  it("已登录：动作组首位是「编辑」图标按钮（铅笔），点击切换编辑模式", async () => {
+    const user = userEvent.setup();
+    const props = renderDock({ authStatus: "authenticated" });
+
+    const edit = screen.getByRole("button", { name: "编辑" });
+    expect(edit.textContent).toBe("");
+    expect(edit).toHaveClass("size-11", "rounded-full");
+    expect(edit).toHaveAttribute("title", "编辑");
+    expect(edit).toHaveAttribute("aria-pressed", "false");
+
+    await user.click(edit);
+    expect(props.onToggleEdit).toHaveBeenCalledTimes(1);
+  });
+
+  it("编辑模式中：同一按钮变成对勾「完成编辑」，再点是同一个回调", async () => {
+    const user = userEvent.setup();
+    const props = renderDock({
+      authStatus: "authenticated",
+      editMode: true,
+    });
+
+    const done = screen.getByRole("button", { name: "完成编辑" });
+    expect(done).toHaveAttribute("title", "完成编辑");
+    expect(done).toHaveAttribute("aria-pressed", "true");
+    expect(screen.queryByRole("button", { name: "编辑" })).toBeNull();
+
+    await user.click(done);
+    expect(props.onToggleEdit).toHaveBeenCalledTimes(1);
+  });
+
+  it("未登录：不渲染编辑入口（前端隐藏，服务端仍是唯一防线）", () => {
+    renderDock({ authStatus: "anonymous" });
+    expect(within(dock()).queryByRole("button", { name: /编辑/ })).toBeNull();
   });
 
   it("主题按钮也是单图标宽、无文字（功能名在 aria-label/title）", () => {

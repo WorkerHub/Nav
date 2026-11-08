@@ -30,15 +30,13 @@ import {
   deleteReplacedAsset,
   useAssetDraftCleanup,
 } from "@/components/admin/asset-upload";
-import { IconPickerField } from "@/components/admin/icon-picker";
+import { LinkEditDialog } from "@/components/admin/link-edit-dialog";
 import { SiteIcon } from "@/components/site-icon";
 import {
   adminCreateCategory,
-  adminCreateLink,
   adminDeleteCategory,
   adminDeleteLink,
   adminUpdateCategory,
-  adminUpdateLink,
 } from "@/lib/api";
 import { useNavStore } from "@/lib/nav-store";
 import type { AdminCategory, AdminLink, Visibility } from "@/lib/types";
@@ -268,107 +266,31 @@ export function LinkPanel({
   ).sort((a, b) => a.sortOrder - b.sortOrder);
   const [editingId, setEditingId] = React.useState<string | null>(null);
   const [creating, setCreating] = React.useState(false);
-  const [form, setForm] = React.useState({
-    categoryId: "",
-    title: "",
-    url: "",
-    iconUrl: "",
-    description: "",
-    visibility: "public" as Visibility,
-  });
-  const draft = useAssetDraftCleanup();
 
   const openCreate = () => {
     if (!category) {
       toast.error("请先选择一个分类");
       return;
     }
-    setForm({
-      categoryId: category.id,
-      title: "",
-      url: "",
-      iconUrl: "",
-      description: "",
-      visibility: "public",
-    });
     setEditingId(null);
     setCreating(true);
   };
 
   const openEdit = (id: string) => {
     // 「所有」视图下 categoryLinks 就是当前场景的全部链接，因此编辑照样可用，
-    // 且预选值取链接实际所属的分类（不是筛选器当前选中的分类）。
-    const l = categoryLinks.find((x) => x.id === id);
-    if (!l) return;
-    setForm({
-      categoryId: l.categoryId,
-      title: l.title,
-      url: l.url,
-      iconUrl: l.iconUrl ?? "",
-      description: l.description ?? "",
-      visibility: l.visibility,
-    });
+    // 预选值由弹窗自己按链接实际所属分类填写。
     setEditingId(id);
     setCreating(false);
   };
 
-  const close = () => {
-    void draft.discard();
+  const closeDialog = () => {
     setCreating(false);
     setEditingId(null);
   };
 
-  const save = async () => {
-    // 所属分类是必填项（「所有」视图下 openCreate 已拦一次，这里再兜一道）
-    if (!form.categoryId) {
-      toast.error("请先选择一个分类");
-      return;
-    }
-    const previousIcon = links.find((l) => l.id === editingId)?.iconUrl ?? null;
-    // 分类变了 = 把链接搬到目标分类末尾（服务端在 categoryId 变更且未给 sortOrder
-    // 时置全局 MAX+1，沿 #17 分类搬家口径）；未变时服务端不扰动顺序。
-    const moved =
-      !!editingId &&
-      links.find((l) => l.id === editingId)?.categoryId !== form.categoryId;
-    const targetCategory = categories.find((c) => c.id === form.categoryId);
-    const payload = {
-      categoryId: form.categoryId,
-      title: form.title,
-      url: form.url,
-      iconUrl: form.iconUrl || null,
-      description: form.description || null,
-      visibility: form.visibility,
-    };
-    try {
-      if (editingId) {
-        if (moved) {
-          // 换分类要把「最后一次写」留给这次 PUT：先等在飞的 /links/reorder 落库，
-          // 同时作废本地顺序簿记（旧顺序若在 PUT 之后落库，会把这个链接改回旧槽位，
-          // 成功后还会把旧顺序写回本地、让界面继续按旧槽位排）。
-          await useNavStore.getState().settleLinkOrder();
-        }
-        await adminUpdateLink(editingId, payload);
-        toast.success(
-          moved && targetCategory
-            ? `链接已移到「${targetCategory.name}」末尾`
-            : "链接已更新",
-        );
-      } else {
-        await adminCreateLink(payload);
-        toast.success("链接已创建");
-      }
-    } catch (error) {
-      // 与分类/场景面板同口径：保存失败弹错误原文，弹窗保持打开
-      toast.error(`保存失败：${(error as Error).message}`);
-      return;
-    }
-    draft.commit();
-    // 图标清旧由前端负责（后端只对 settings 的 background/logo 自动清旧）
-    await deleteReplacedAsset(previousIcon, payload.iconUrl);
-    setCreating(false);
-    setEditingId(null);
-    onChanged();
-  };
+  const dialogLink = editingId
+    ? (links.find((l) => l.id === editingId) ?? null)
+    : null;
 
   const remove = async (id: string) => {
     await adminDeleteLink(id);
@@ -456,91 +378,17 @@ export function LinkPanel({
         </p>
       )}
 
-      <Dialog
-        open={creating || !!editingId}
-        onOpenChange={(open) => {
-          if (!open) close();
+      <LinkEditDialog
+        open={creating || !!dialogLink}
+        link={dialogLink}
+        categories={categories}
+        defaultCategoryId={category?.id}
+        onClose={closeDialog}
+        onSaved={() => {
+          closeDialog();
+          onChanged();
         }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{editingId ? "编辑链接" : "新建链接"}</DialogTitle>
-          </DialogHeader>
-          <div className="grid gap-4">
-            <div className="grid gap-2">
-              <Label htmlFor="link-category">所属分类</Label>
-              {/* 只列当前场景的分类（跨场景搬分类不做）；编辑时预选链接实际分类 */}
-              <Select
-                value={form.categoryId}
-                onValueChange={(v) => setForm({ ...form, categoryId: v })}
-              >
-                <SelectTrigger
-                  id="link-category"
-                  aria-label="选择所属分类"
-                  className="w-full"
-                >
-                  <SelectValue placeholder="选择分类" />
-                </SelectTrigger>
-                <SelectContent>
-                  {categories.map((c) => (
-                    <SelectItem key={c.id} value={c.id}>
-                      {c.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="link-title">标题</Label>
-              <Input
-                id="link-title"
-                value={form.title}
-                onChange={(e) => setForm({ ...form, title: e.target.value })}
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="link-url">URL</Label>
-              <Input
-                id="link-url"
-                value={form.url}
-                onChange={(e) => setForm({ ...form, url: e.target.value })}
-              />
-            </div>
-            <IconPickerField
-              id="link-icon"
-              label="链接图标"
-              value={form.iconUrl}
-              onChange={(iconUrl) => setForm({ ...form, iconUrl })}
-              onUploaded={draft.track}
-              title={form.title}
-              url={form.url}
-            />
-            <div className="grid gap-2">
-              <Label htmlFor="link-desc">描述</Label>
-              <Input
-                id="link-desc"
-                value={form.description}
-                onChange={(e) =>
-                  setForm({ ...form, description: e.target.value })
-                }
-              />
-            </div>
-            <div className="flex items-center justify-between">
-              <Label htmlFor="link-vis">私有链接</Label>
-              <Switch
-                id="link-vis"
-                checked={form.visibility === "private"}
-                onCheckedChange={(v) =>
-                  setForm({ ...form, visibility: v ? "private" : "public" })
-                }
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button onClick={() => void save()}>保存</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      />
     </div>
   );
 }

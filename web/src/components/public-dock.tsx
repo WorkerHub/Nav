@@ -1,4 +1,4 @@
-import { LogIn, LogOut, Settings } from "lucide-react";
+import { Check, LogIn, LogOut, Pencil, Settings } from "lucide-react";
 import { SceneSwitcher } from "@/components/scene-switcher";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
@@ -13,8 +13,9 @@ import type { Scene } from "@/lib/types";
  *    组件内不做可见性判断）。没设图标的场景由 SceneSwitcher 回退「首字圆」；
  *    场景多时在**组内**纵向滚动（`max-h-40`），不把坞撑高。
  *  - 下部：主题三态 + 登录态三态，各一个图标按钮：探活未回（pending）时不渲染
- *    任何登录态按钮（不闪「登录」），已登录是「后台」+「退出」，未登录是「登录」
- *    （仍由公共页弹 LoginDialog）。
+ *    任何登录态按钮（不闪「登录」），已登录是「编辑」+「后台」+「退出」，未登录
+ *    是「登录」（仍由公共页弹 LoginDialog）。「编辑」只切本前端的编辑模式
+ *    （铅笔 ⇄ 对勾），未登录也拿不到可写数据，所以不渲染。
  *
  * 布局：`fixed` 贴右下、层级高于页面内容；外层不吃点击（`pointer-events-none`），
  * 只有两块面板各自 `pointer-events-auto` —— 坞占的那片透明区域不会挡住下面的链接。
@@ -25,6 +26,8 @@ export function PublicDock({
   activeScene,
   onSceneChange,
   authStatus,
+  editMode = false,
+  onToggleEdit,
   onOpenAdmin,
   onLogin,
   onLogout,
@@ -34,6 +37,9 @@ export function PublicDock({
   activeScene: string | null;
   onSceneChange: (sceneId: string) => void;
   authStatus: AuthStatus;
+  /** 首页编辑模式（仅登录态有意义，图标在铅笔 ⇄ 对勾之间切换） */
+  editMode?: boolean;
+  onToggleEdit: () => void;
   onOpenAdmin: () => void;
   onLogin: () => void;
   onLogout: () => void;
@@ -58,6 +64,24 @@ export function PublicDock({
         />
       )}
       <div className="pointer-events-auto flex w-full flex-col gap-1">
+        {/* 「编辑」只属于登录态：探活未回 / 未登录都不渲染（不闪、不给匿名用户可写入口） */}
+        {authStatus === "authenticated" && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="glass size-11 rounded-full text-foreground hover:text-foreground"
+            aria-label={editMode ? "完成编辑" : "编辑"}
+            title={editMode ? "完成编辑" : "编辑"}
+            aria-pressed={editMode}
+            onClick={onToggleEdit}
+          >
+            {editMode ? (
+              <Check className="size-4" aria-hidden="true" />
+            ) : (
+              <Pencil className="size-4" aria-hidden="true" />
+            )}
+          </Button>
+        )}
         {/* 主题是访客本机偏好，不受登录态影响：pending 期间照常可点 */}
         <ThemeToggle className="size-11 rounded-full" />
         {authStatus === "pending" ? null : authStatus === "authenticated" ? (
