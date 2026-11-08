@@ -225,6 +225,90 @@ describe("settings searchNewTab (search_new_tab)", () => {
 });
 
 /**
+ * `showUrl`（显示网址）：KV 键 `show_url`，值 `"1"`/`"0"`。存量库无此键时 DTO
+ * 按 `true`（默认开，即改动前的呈现）返回；公开端点同样带出该字段给前端。
+ */
+describe("settings showUrl (show_url)", () => {
+  let env: Env;
+  let app: Hono;
+  let cookie: string;
+
+  beforeEach(async () => {
+    env = makeEnv();
+    app = makeApp();
+    await runMigrations(env);
+    cookie = await signIn(app, env);
+  });
+
+  it("defaults to true when the key is absent (admin + public DTO)", async () => {
+    expect(storedSetting(env, "show_url")).toBeNull();
+
+    const admin = await readJson(await getSettings(app, env, cookie));
+    expect(admin.showUrl).toBe(true);
+
+    const pub = await readJson(await app.request("/api/public", {}, env));
+    expect(pub.settings.showUrl).toBe(true);
+
+    // Reading the default never writes a row.
+    expect(storedSetting(env, "show_url")).toBeNull();
+  });
+
+  it('round-trips false/true as "0"/"1" and mirrors into /api/public', async () => {
+    let res = await putSettings(app, env, cookie, { showUrl: false });
+    expect(res.status).toBe(200);
+    expect((await readJson(res)).showUrl).toBe(false);
+    expect(storedSetting(env, "show_url")).toBe("0");
+    expect(
+      (await readJson(await app.request("/api/public", {}, env))).settings
+        .showUrl,
+    ).toBe(false);
+
+    res = await putSettings(app, env, cookie, { showUrl: true });
+    expect((await readJson(res)).showUrl).toBe(true);
+    expect(storedSetting(env, "show_url")).toBe("1");
+  });
+
+  it("keeps the stored value when other settings are written", async () => {
+    await putSettings(app, env, cookie, { showUrl: false });
+    const res = await putSettings(app, env, cookie, { siteTitle: "nav2" });
+    const body = await readJson(res);
+    expect(body.siteTitle).toBe("nav2");
+    expect(body.showUrl).toBe(false);
+  });
+
+  it("rejects non-boolean values with 400 and keeps the stored value", async () => {
+    await putSettings(app, env, cookie, { showUrl: false });
+    for (const showUrl of ["0", 1, 0, null, "true"]) {
+      const res = await putSettings(app, env, cookie, { showUrl });
+      expect(res.status).toBe(400);
+      expect(await readJson(res)).toEqual({
+        error: "showUrl must be a boolean",
+      });
+    }
+    expect(storedSetting(env, "show_url")).toBe("0");
+  });
+
+  it("rejects the whole write when showUrl is invalid (no partial update)", async () => {
+    const res = await putSettings(app, env, cookie, {
+      siteTitle: "nav2",
+      showUrl: "false",
+    });
+    expect(res.status).toBe(400);
+    expect(storedSetting(env, "site_title")).toBeNull();
+    expect(storedSetting(env, "show_url")).toBeNull();
+  });
+
+  it("lists show_url in the settings whitelist", async () => {
+    const res = await app.request(
+      "/api/admin/settings/keys",
+      { headers: { cookie } },
+      env,
+    );
+    expect((await readJson(res)).keys).toContain("show_url");
+  });
+});
+
+/**
  * `wallpaperSource`（壁纸来源）：KV 键 `wallpaper_source`，值 `bing`/`custom`。
  * 存量库无此键时 DTO 按 `bing` 返回；公开端点同样带出该字段给前端。
  */

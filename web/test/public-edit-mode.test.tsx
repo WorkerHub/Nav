@@ -392,3 +392,25 @@ describe("进入编辑模式失败：不出现半编辑态", () => {
     expect(screen.queryByRole("button", { name: "完成编辑" })).toBeNull();
   });
 });
+
+describe("编辑模式：显示网址开关不影响编辑", () => {
+  it("站点设置关闭显示网址：普通模式无域名，编辑模式仍有", async () => {
+    const user = userEvent.setup();
+    const noUrl = { ...settings, showUrl: false };
+    seed({
+      publicData: { ...publicData, settings: noUrl },
+      privateData: { ...privateData, settings: noUrl },
+    });
+    renderPage();
+
+    expect(screen.getByRole("link", { name: /GitHub/ })).not.toHaveTextContent(
+      "github.com",
+    );
+
+    await enterEdit(user);
+
+    expect(screen.getByRole("button", { name: /^GitHub/ })).toHaveTextContent(
+      "github.com",
+    );
+  });
+});

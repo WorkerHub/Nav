@@ -95,7 +95,8 @@
     "logoUrl": "",
     "columns": 0,
     "searchNewTab": true,
-    "linkStyle": "classic"
+    "linkStyle": "classic",
+    "showUrl": true
   }
 }
 ```
@@ -105,6 +106,8 @@
 `wallpaperSource`：首页壁纸来源，`bing`（默认，Bing 每日壁纸）| `custom`（用 `backgroundUrl` 自定义图）。存量库无此键时按 `bing` 返回。
 
 `linkStyle`：首页链接样式，`classic`（默认）| `compact` | `wide`。存量库无此键（或存量值不在枚举内）时按 `classic` 返回。
+
+`showUrl`：首页链接卡是否显示网址，默认 `true`（保持改动前的呈现）。存量库无此键时按 `true` 返回。
 
 ### GET /api/wallpaper/today
 
@@ -218,12 +221,14 @@ Passkey（WebAuthn，/api/auth/passkey/*，@simplewebauthn/server v14）：
 
 ### 站点设置
 
-- `GET /api/admin/settings` → `{siteTitle, backgroundUrl, wallpaperSource, logoUrl, columns, searchNewTab, linkStyle}`
-- `PUT /api/admin/settings` body 可含 `{siteTitle, backgroundUrl, wallpaperSource(bing|custom), logoUrl, columns(0–12), searchNewTab(boolean), linkStyle(classic|compact|wide)}` → 更新后对象
+- `GET /api/admin/settings` → `{siteTitle, backgroundUrl, wallpaperSource, logoUrl, columns, searchNewTab, linkStyle, showUrl}`
+- `PUT /api/admin/settings` body 可含 `{siteTitle, backgroundUrl, wallpaperSource(bing|custom), logoUrl, columns(0–12), searchNewTab(boolean), linkStyle(classic|compact|wide), showUrl(boolean)}` → 更新后对象
 
 主题（设深色/浅色）**不在**站点设置里：深浅色只由访客本机偏好（顶栏主题按钮，`localStorage` 键 `nav.visitor-theme`）决定，没有偏好时跟随系统外观。`PUT` 传 `theme` 不生效（白名单外的键一律忽略）；存量的 `settings.theme` 行不删不迁移，只是停产不用。
 
 `searchNewTab`：搜索是否在新标签页打开。存储键 `search_new_tab`，值 `"1"`/`"0"`（同 `totp_enabled` 的 KV 布尔惯例）；库中**无此键**（存量库）时按 `true` 返回。写入只接受布尔值，非布尔返回 400 `searchNewTab must be a boolean`。
+
+`showUrl`：首页链接卡是否显示网址。存储键 `show_url`，值 `"1"`/`"0"`（同 `searchNewTab` 的 KV 布尔惯例）；库中**无此键**（存量库）时按 `true` 返回。写入只接受布尔值，非布尔返回 400 `showUrl must be a boolean`，且一次被拒的请求不会写入同包的任何设置键。关闭后只影响普通模式的首页链接卡（`classic`/`wide` 两档不渲染网址行），首页编辑模式恒显示网址。
 
 `wallpaperSource`：首页壁纸来源。存储键 `wallpaper_source`，值 `"bing"`/`"custom"`；库中**无此键**（存量库）时按 `bing` 返回。写入只接受 `bing`/`custom`，其他值返回 400 `wallpaperSource must be 'bing' or 'custom'`。
 
