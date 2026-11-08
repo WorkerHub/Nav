@@ -40,6 +40,13 @@ function grid(container: HTMLElement) {
   return el;
 }
 
+/**
+ * wide 档列模板（规格定版）：轨道 300–380px、一行多张、整行居中。
+ * 下限取 `min(300px, 100%)`，容器窄于 300px 时轨道跟着收缩、不横向溢出。
+ */
+const WIDE_GRID_COLUMNS =
+  "grid-cols-[repeat(auto-fill,minmax(min(300px,100%),380px))]";
+
 /** 某条链接里那个链接样式的图标盒（固定边长的方块）。 */
 function iconBox(link: HTMLElement, linkStyle: LinkStyle): HTMLElement {
   const box = link.querySelector<HTMLElement>(`[data-icon-box="${linkStyle}"]`);
@@ -125,11 +132,18 @@ describe("LinkGrid：三档样式", () => {
     expect(link.querySelector("span.min-w-0")).toHaveClass("truncate");
   });
 
-  it("wide：玻璃底宽卡，图标左、右侧名称 + 域名两行，桌面 3 列", () => {
+  it("wide：玻璃底宽卡，图标 56px 垂直居中、名称 + 域名两行，列模板 300–380px 封顶 + 整行居中", () => {
     const { container } = render(<LinkGrid links={links} linkStyle="wide" />);
 
     const wideGrid = grid(container);
     expect(wideGrid).toHaveClass(
+      "grid",
+      "gap-3",
+      "justify-center",
+      WIDE_GRID_COLUMNS,
+    );
+    // 不再是固定列数梯度（那会把卡拉满整行）
+    expect(wideGrid).not.toHaveClass(
       "grid-cols-1",
       "sm:grid-cols-2",
       "lg:grid-cols-3",
@@ -139,14 +153,19 @@ describe("LinkGrid：三档样式", () => {
     const link = screen.getByRole("link", { name: /GitHub/ });
     expect(link).toHaveClass("glass", "glass-hover", "items-center");
     expect(link).toHaveTextContent("github.com");
-    expect(link.querySelector("img")).toHaveAttribute("width", "36");
+    // 卡宽由网格轨道给（300–380px）：砖壳自己不写死宽高、手动加 min-height
+    expect(link).not.toHaveClass("w-full");
+    expect(link.className).not.toMatch(/(^|\s)w-\[/);
+    expect(link.className).not.toContain("min-h");
+    expect(link.querySelector("img")).toHaveAttribute("width", "56");
     expect(iconBox(link, "wide")).toHaveStyle({
-      width: "36px",
-      height: "36px",
+      width: "56px",
+      height: "56px",
     });
     // 名称与域名各占一行
     const title = screen.getByText("GitHub");
     expect(title).toHaveClass("block", "truncate");
+    expect(link.querySelectorAll("span.block")).toHaveLength(2);
   });
 
   it("三档图标盒尺寸与 LINK_ICON_BOX 一致、同档内每条都相同（不随图标文件变化）", () => {
@@ -205,7 +224,7 @@ describe("CategorySection：把样式透传给网格，锚点偏移随顶栏移�
       <CategorySection category={category} linkStyle="wide" />,
     );
 
-    expect(grid(container)).toHaveClass("lg:grid-cols-3");
+    expect(grid(container)).toHaveClass(WIDE_GRID_COLUMNS);
     expect(screen.getByRole("link", { name: /GitHub/ })).toHaveClass("glass");
   });
 });
@@ -275,11 +294,7 @@ describe("LinkGrid：classic 成块列数（站点设置 columns）", () => {
     const wide = render(
       <LinkGrid links={links} linkStyle="wide" columns={12} />,
     );
-    expect(grid(wide.container)).toHaveClass(
-      "grid-cols-1",
-      "sm:grid-cols-2",
-      "lg:grid-cols-3",
-    );
+    expect(grid(wide.container)).toHaveClass(WIDE_GRID_COLUMNS);
     expect(grid(wide.container).className).not.toContain("xl:grid-cols-12");
     expect(grid(wide.container).style.maxWidth).toBe("");
   });
@@ -396,7 +411,7 @@ describe("LinkGrid：classic 砖块尺寸三档（tileSize）", () => {
     const wide = render(
       <LinkGrid links={links} linkStyle="wide" tileSize="medium" />,
     );
-    expect(grid(wide.container)).toHaveClass("lg:grid-cols-3");
+    expect(grid(wide.container)).toHaveClass(WIDE_GRID_COLUMNS);
     expect(screen.getByRole("link", { name: /GitHub/ })).not.toHaveClass(
       "w-[113px]",
       "h-[144px]",
@@ -413,13 +428,15 @@ describe("LinkGrid：显示网址开关（showUrl，缺省开）", () => {
     expect(link).not.toHaveTextContent("github.com");
   });
 
-  it("wide 档 showUrl=false：右侧只剩名称一行，不渲染域名", () => {
+  it("wide 档 showUrl=false：右侧只剩名称一行，域名行不渲染、不占位", () => {
     render(<LinkGrid links={links} linkStyle="wide" showUrl={false} />);
 
     const link = screen.getByRole("link", { name: /GitHub/ });
     expect(link).toHaveClass("glass", "glass-hover");
     expect(link).toHaveTextContent("GitHub");
     expect(link).not.toHaveTextContent("github.com");
+    // 两行文字变一行：名称行的 span 还在，域名行整块不渲染（不是隐藏留白）
+    expect(link.querySelectorAll("span.block")).toHaveLength(1);
   });
 
   it("compact 档本来就不渲染域名：开关不改变它的形状", () => {

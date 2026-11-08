@@ -18,6 +18,10 @@ const baseSettings: SiteSettings = {
   searchNewTab: true,
 };
 
+/** wide 档列模板：轨道 300–380px、一行多张、整行居中（与 link-grid.test 同口径） */
+const WIDE_GRID_COLUMNS =
+  "grid-cols-[repeat(auto-fill,minmax(min(300px,100%),380px))]";
+
 function seed(settings: SiteSettings) {
   useNavStore.setState({
     publicData: { categories: [], scenes: [], searchEngines: [], settings },
@@ -157,7 +161,7 @@ describe("PublicPage 头部：时钟块取代顶栏", () => {
     const link = screen.getByRole("link", { name: /GitHub/ });
     expect(link).toHaveClass("glass");
     expect(link).toHaveTextContent("github.com");
-    expect(link.parentElement?.parentElement).toHaveClass("lg:grid-cols-3");
+    expect(link.parentElement?.parentElement).toHaveClass(WIDE_GRID_COLUMNS);
   });
 
   it("旧后端 / 旧缓存没有 linkStyle：回落 classic（玻璃瓦片 + 域名，与改动前一致）", () => {
@@ -253,7 +257,7 @@ describe("PublicPage 头部：时钟块取代顶栏", () => {
     render(<PublicPage onOpenAdmin={vi.fn()} />);
     expect(
       screen.getByRole("link", { name: /GitHub/ }).parentElement?.parentElement,
-    ).toHaveClass("lg:grid-cols-3");
+    ).toHaveClass(WIDE_GRID_COLUMNS);
   });
 
   it("settings.showUrl=false：普通模式卡片不渲染域名，名称与跳转不变", () => {

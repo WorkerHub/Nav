@@ -89,12 +89,13 @@ const collisionDetection: CollisionDetection = (args) => {
 
 /**
  * compact / wide 的「+」砖高度（框内只有一个图标）：与同档一块砖一致 ——
- * compact 图标 20 单行、wide 图标 36 + 一行名称 + 一行域名。classic 不列在这里：
- * 它直接拿砖壳的定宽定高类（`w-[…] h-[…]`），无须估算高度。
+ * compact 图标 20 单行、wide 图标 56 + 一行名称 + 一行域名（卡高 ≈ 56 + 上下内距
+ * 12×2 + 1px 边框 ×2 = 82px，文字两行 36px 还矮于图标，所以按图标算）。classic
+ * 不列在这里：它直接拿砖壳的定宽定高类（`w-[…] h-[…]`），无须估算高度。
  */
 const PLACEHOLDER_CLASS: Partial<Record<LinkStyle, string>> = {
   compact: "min-h-9",
-  wide: "min-h-[62px]",
+  wide: "min-h-[82px]",
 };
 
 type Order = Record<string, string[]>;
