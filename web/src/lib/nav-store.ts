@@ -306,6 +306,9 @@ export const useNavStore = create<NavState>((set, get) => ({
     // 在飞的排序失败时 flushReorder 已自行回滚 + 回拉，并由原调用者 toast；
     // 这里不能让它的失败挡住换分类的保存。
     if (track.inFlight) await track.inFlight.catch(() => {});
+    // 首页编辑模式的拖动保存（POST /links/move）也是链接顺序/归属的写入：不等它
+    // 落库就发 PUT，旧的 move 可能后落地、把改分类的结果写回旧分类旧槽位。
+    if (homeMoves.inFlight) await homeMoves.inFlight.catch(() => {});
     track.localIds = null;
     track.pendingIds = null;
     track.beforeIds = null;
@@ -822,7 +825,9 @@ const homeMoves: {
   snapshot: AdminLink[] | null;
   queue: QueuedHomeMove[];
   running: boolean;
-} = { snapshot: null, queue: [], running: false };
+  /** 发送循环本身：settleLinkOrder 等它落库，避免旧的 move 晚于 PUT 落地 */
+  inFlight: Promise<void> | null;
+} = { snapshot: null, queue: [], running: false, inFlight: null };
 
 interface PendingLinkDelete {
   link: AdminLink;
@@ -886,9 +891,37 @@ function enqueueHomeMove(op: {
     homeMoves.queue.push({ ...op, resolve, reject });
     if (!homeMoves.running) {
       homeMoves.running = true;
-      void drainHomeMoves();
+      const run = drainHomeMoves();
+      // 循环若已同步收尾（running 已清），不登记一个永不落地的 inFlight
+      if (homeMoves.running) homeMoves.inFlight = run;
     }
   });
+}
+
+/**
+ * 拖动失败回滚：只把「拖动前就存在、现在还在」的链接改回原来的归属与槽位。
+ *
+ * 不能直接拿快照整表覆盖：拖动在飞期间用户可能删掉链接（已本地移除、几秒后真删）
+ * 或撤销删除；整表覆盖会把待删的链接复活、把刚撤销的链接抹掉 —— 定时器照常落库后，
+ * 界面就和服务端永久不一致。成员集合以当前为准，顺序按恢复后的 sortOrder 重排。
+ */
+function rollbackHomeLinks(
+  current: readonly AdminLink[],
+  snapshot: readonly AdminLink[],
+): AdminLink[] {
+  const before = new Map(snapshot.map((link) => [link.id, link]));
+  return current
+    .map((link) => {
+      const original = before.get(link.id);
+      return original
+        ? {
+            ...link,
+            categoryId: original.categoryId,
+            sortOrder: original.sortOrder,
+          }
+        : link;
+    })
+    .sort((a, b) => a.sortOrder - b.sortOrder);
 }
 
 /**
@@ -925,7 +958,10 @@ async function drainHomeMoves(): Promise<void> {
         if (snapshot) {
           const current = useNavStore.getState().adminData;
           if (current) {
-            const rolledBack: AdminData = { ...current, links: snapshot };
+            const rolledBack: AdminData = {
+              ...current,
+              links: rollbackHomeLinks(current.links, snapshot),
+            };
             useNavStore.setState((state) => ({
               adminData: rolledBack,
               ...editProjection(rolledBack, state.privateData),
@@ -937,8 +973,11 @@ async function drainHomeMoves(): Promise<void> {
     }
     homeMoves.snapshot = null; // 本轮全部落库，下一次拖动重新取快照
   } finally {
-    // 旧会话的循环不得清掉新会话正在跑的循环的 running
-    if (!stale()) homeMoves.running = false;
+    // 旧会话的循环不得清掉新会话正在跑的循环的 running / inFlight
+    if (!stale()) {
+      homeMoves.running = false;
+      homeMoves.inFlight = null;
+    }
   }
 }
 
@@ -996,6 +1035,7 @@ export function resetHomeEditState(): void {
   homeMoves.snapshot = null;
   homeMoves.queue.splice(0);
   homeMoves.running = false;
+  homeMoves.inFlight = null;
   for (const record of pendingLinkDeletes.values()) {
     clearTimeout(record.timer);
     toast.dismiss(record.toastId);

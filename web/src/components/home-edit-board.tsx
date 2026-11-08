@@ -128,6 +128,40 @@ function relocate(prev: Order, activeId: string, overId: string): Order {
   };
 }
 
+/**
+ * 松手结算：把拖拽草稿变成最终顺序。
+ *
+ * 跨容器搬运已经在 `onDragOver` 里完成 —— active 插到了落点砖**之前**，那块砖因此
+ * 在草稿里顺延到 active 后面。松手时 dnd-kit 仍可能报「over = 那块被顺延的砖」；
+ * 此时若再按同容器 arrayMove 一次，active 就会挪到它后面（多走一位，拖到目标分类
+ * 首个砖时永远落不到首位）。因此跨容器插入后，只有松手指向的是**别的**砖才再结算。
+ */
+export function resolveDropOrder({
+  order,
+  initialOrder,
+  activeId,
+  overId,
+}: {
+  order: Order;
+  initialOrder: Order;
+  activeId: string;
+  overId: string | null;
+}): Order {
+  if (!overId) return initialOrder;
+  if (overId === activeId) return order;
+  const currentCategory = containerOf(order, activeId);
+  const initialCategory = containerOf(initialOrder, activeId);
+  if (!currentCategory || !initialCategory) return order;
+  if (currentCategory !== initialCategory) {
+    const items = order[currentCategory];
+    const activeIndex = items.indexOf(activeId);
+    // 紧邻 active 之后 = 被跨容器插入顺延的那块，草稿本身已是落点
+    if (activeIndex >= 0 && items.indexOf(overId) === activeIndex + 1)
+      return order;
+  }
+  return relocate(order, activeId, overId);
+}
+
 /** 一条链接砖（编辑模式）：单击编辑、右上角删除；整块可拖。 */
 function EditableTile({
   link,
@@ -175,6 +209,7 @@ function EditableTile({
         // 角标独立于拖拽手柄：按下/点击都不冒泡到砖（不误触拖拽与编辑弹窗）
         onPointerDown={(event) => event.stopPropagation()}
         onMouseDown={(event) => event.stopPropagation()}
+        onTouchStart={(event) => event.stopPropagation()}
         onClick={(event) => {
           event.stopPropagation();
           onRemove(link.id);
@@ -315,7 +350,12 @@ export function HomeEditBoard({
       setOrder(initialOrder);
       return;
     }
-    const final = relocate(order, activeKey, overKey);
+    const final = resolveDropOrder({
+      order,
+      initialOrder,
+      activeId: activeKey,
+      overId: overKey,
+    });
     const categoryId = containerOf(final, activeKey);
     const initialCategory = containerOf(initialOrder, activeKey);
     if (!categoryId || !initialCategory) return;

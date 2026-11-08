@@ -332,6 +332,75 @@ describe("moveLinkOnHome：乐观写入 + 串行保存", () => {
     expect(privateLinks("c1")).toEqual(["l1", "l3"]);
     expect(privateLinks("c2")).toEqual(["l2", "l4"]);
   });
+
+  it("拖动失败时，期间点 ✕ 的链接不会被回滚复活（待删定时器照常落库）", async () => {
+    const pending = deferred();
+    moveMock.mockReturnValue(pending.promise);
+
+    const done = useNavStore.getState().moveLinkOnHome({
+      linkId: "l1",
+      categoryId: "c2",
+      afterId: "l2",
+    });
+    useNavStore.getState().removeLinkOnHome("l3");
+    expect(ids(adminData().links)).toEqual(["l2", "l1", "l4"]);
+
+    pending.reject(new Error("move failed"));
+    await expect(done).rejects.toThrow("move failed");
+
+    // 成员以当前为准：l3 是用户刚删的，不回到界面上；回滚只恢复顺序与归属
+    expect(ids(adminData().links)).toEqual(["l1", "l2", "l4"]);
+    expect(adminData().links.find((l) => l.id === "l1")?.categoryId).toBe("c1");
+    expect(privateLinks("c1")).toEqual(["l1"]);
+    expect(privateLinks("c2")).toEqual(["l2", "l4"]);
+  });
+
+  it("拖动失败时，期间撤销恢复的链接不会被回滚抹掉", async () => {
+    const pending = deferred();
+    moveMock.mockReturnValue(pending.promise);
+
+    const done = useNavStore.getState().moveLinkOnHome({
+      linkId: "l1",
+      categoryId: "c2",
+      afterId: "l2",
+    });
+    useNavStore.getState().removeLinkOnHome("l2");
+    lastToastOptions().action?.onClick(); // 撤销窗口内点「撤销」：只恢复本地
+    expect(ids(adminData().links)).toContain("l2");
+
+    pending.reject(new Error("move failed"));
+    await expect(done).rejects.toThrow("move failed");
+
+    expect(ids(adminData().links)).toEqual(["l1", "l2", "l3", "l4"]);
+    expect(adminData().links.find((l) => l.id === "l2")?.categoryId).toBe("c2");
+    expect(deleteMock).not.toHaveBeenCalled();
+  });
+
+  it("settleLinkOrder 等首页拖动落库后才返回（换分类保存前调用）", async () => {
+    const pending = deferred();
+    moveMock.mockReturnValue(pending.promise);
+
+    const done = useNavStore.getState().moveLinkOnHome({
+      linkId: "l1",
+      categoryId: "c2",
+      afterId: "l2",
+    });
+    let settled = false;
+    const settle = useNavStore
+      .getState()
+      .settleLinkOrder()
+      .then(() => {
+        settled = true;
+      });
+
+    await flushAsync();
+    expect(settled).toBe(false);
+
+    pending.resolve();
+    await settle;
+    await done;
+    expect(settled).toBe(true);
+  });
 });
 
 describe("removeLinkOnHome：延迟删除 + 撤销", () => {
