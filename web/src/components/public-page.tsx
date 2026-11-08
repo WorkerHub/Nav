@@ -30,7 +30,7 @@ import {
  * 分类区块，公共页与访客都无法在这里改。
  *
  * 首页编辑模式（登录态专属，纯前端本地状态）：坞里的铅笔把页面切成
- * `HomeEditBoard`（拖动排序/分组、✕ 延迟删除、单击复用后台编辑弹窗），
+ * `HomeEditBoard`（拖动排序/分组、✕ 延迟删除、单击砖编辑、分类末尾「+」砖新建），
  * 退出/刷新/Esc/切场景/输入搜索都回到正常模式；编辑模式里砖不再跳转。
  *
  * 安全口径：未登录时私有区完全不渲染 —— privateData 未加载时组件树里没有私有区块，
@@ -54,7 +54,8 @@ export function PublicPage({ onOpenAdmin }: { onOpenAdmin: () => void }) {
     exitEditMode,
     moveLinkOnHome,
     removeLinkOnHome,
-    applyEditedLink,
+    applySavedLink,
+    createLinkOnHome,
   } = useNavStore();
   const authenticated = useAuthenticated();
   // 本机场景偏好（前后台共用）：只影响显示过滤，不写服务端
@@ -63,6 +64,10 @@ export function PublicPage({ onOpenAdmin }: { onOpenAdmin: () => void }) {
   // 搜索框内容只用于「编辑模式的进出门槛」，搜索本身仍由 SearchBar 自己持有
   const [searchQuery, setSearchQuery] = React.useState("");
   const [editingLinkId, setEditingLinkId] = React.useState<string | null>(null);
+  // 分类末尾「+」砖新建：非 null 时弹窗处于新建态，所属分类预选它
+  const [creatingCategoryId, setCreatingCategoryId] = React.useState<
+    string | null
+  >(null);
 
   React.useEffect(() => {
     void loadPublic();
@@ -80,16 +85,22 @@ export function PublicPage({ onOpenAdmin }: { onOpenAdmin: () => void }) {
     };
   }, []);
 
-  // Esc 退出编辑模式；编辑弹窗打开时 Esc 归弹窗（关弹窗，不退出编辑模式）
+  // Esc 退出编辑模式。链接弹窗（编辑态 / 新建态）打开时 Esc 归弹窗：Radix 在同一次
+  // keydown 里先把弹窗关掉，React 的 state 可能已经清空、而窗口级的这个监听器最后才跑，
+  // 所以光看 state 不够 —— 事件目标仍在弹窗里就不再当成「退出编辑」。
   React.useEffect(() => {
     if (!editMode) return;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || editingLinkId) return;
+      if (event.key !== "Escape") return;
+      if (editingLinkId || creatingCategoryId) return;
+      const target = event.target;
+      if (target instanceof Element && target.closest('[role="dialog"]'))
+        return;
       exitEditMode();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [editMode, editingLinkId, exitEditMode]);
+  }, [editMode, editingLinkId, creatingCategoryId, exitEditMode]);
 
   // 契约：/api/private 返回与 /api/public 同结构的全量数据（公开+私有）。
   // 登录后直接以 privateData.categories 作为全量列表，不再拼接 public/private。
@@ -199,6 +210,7 @@ export function PublicPage({ onOpenAdmin }: { onOpenAdmin: () => void }) {
             onEditLink={setEditingLinkId}
             onRemoveLink={removeLinkOnHome}
             onMoveLink={handleMoveLink}
+            onAddLink={setCreatingCategoryId}
           />
         ) : (
           <div className="flex flex-col gap-10">
@@ -228,15 +240,25 @@ export function PublicPage({ onOpenAdmin }: { onOpenAdmin: () => void }) {
         onLogout={() => void logout()}
       />
 
-      {/* 首页编辑模式的单击编辑：复用后台同一个链接弹窗，保存后就地生效 */}
+      {/*
+        首页编辑模式的链接弹窗：点砖是编辑（复用后台同一份实现）、分类末尾「+」砖是新建
+        （所属分类预选该分类，排序号由 store 定为分类末尾）。两态共用一个弹窗与一条
+        「保存后并入 store」的路径。
+      */}
       <LinkEditDialog
-        open={!!editingLink}
+        open={!!editingLink || !!creatingCategoryId}
         link={editingLink}
         categories={dialogCategories}
-        onClose={() => setEditingLinkId(null)}
-        onSaved={(link) => {
-          applyEditedLink(link);
+        defaultCategoryId={creatingCategoryId ?? undefined}
+        onCreateLink={createLinkOnHome}
+        onClose={() => {
           setEditingLinkId(null);
+          setCreatingCategoryId(null);
+        }}
+        onSaved={(link) => {
+          applySavedLink(link);
+          setEditingLinkId(null);
+          setCreatingCategoryId(null);
         }}
       />
 

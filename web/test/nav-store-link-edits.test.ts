@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { toast } from "sonner";
 import {
+  adminCreateLink,
   adminDeleteLink,
   adminListAll,
+  adminListLinks,
   adminMoveLink,
   type AdminData,
 } from "@/lib/api";
@@ -41,12 +43,16 @@ vi.mock("@/lib/api", async (importOriginal) => {
   return {
     ...actual,
     adminListAll: vi.fn(),
+    adminListLinks: vi.fn(),
+    adminCreateLink: vi.fn(),
     adminMoveLink: vi.fn(),
     adminDeleteLink: vi.fn(),
   };
 });
 
 const listAllMock = vi.mocked(adminListAll);
+const listLinksMock = vi.mocked(adminListLinks);
+const createMock = vi.mocked(adminCreateLink);
 const moveMock = vi.mocked(adminMoveLink);
 const deleteMock = vi.mocked(adminDeleteLink);
 const toastMock = vi.mocked(toast);
@@ -202,6 +208,8 @@ beforeEach(() => {
   resetAdminOrderState();
   resetHomeEditState();
   listAllMock.mockReset();
+  listLinksMock.mockReset();
+  createMock.mockReset();
   moveMock.mockReset();
   deleteMock.mockReset();
   toastMock.mockClear();
@@ -466,10 +474,10 @@ describe("removeLinkOnHome：延迟删除 + 撤销", () => {
   });
 });
 
-describe("applyEditedLink：弹窗保存后就地生效", () => {
+describe("applySavedLink：弹窗保存后就地生效", () => {
   it("替换链接字段并同步公开页投影，改分类后落到目标分类末尾", () => {
     const original = adminData().links.find((l) => l.id === "l1")!;
-    useNavStore.getState().applyEditedLink({
+    useNavStore.getState().applySavedLink({
       ...original,
       title: "GitHub 新版",
       categoryId: "c2",
@@ -482,6 +490,84 @@ describe("applyEditedLink：弹窗保存后就地生效", () => {
     expect(privateLinks("c1")).toEqual(["l3"]);
     expect(privateLinks("c2")).toEqual(["l2", "l4", "l1"]);
     expect(listAllMock).not.toHaveBeenCalled();
+  });
+
+  it("store 里还没有的链接（新建）直接追加并同步投影", () => {
+    useNavStore.getState().applySavedLink(link("l5", "c1", "新链接", 4));
+
+    expect(ids(adminData().links)).toEqual(["l1", "l2", "l3", "l4", "l5"]);
+    expect(privateLinks("c1")).toEqual(["l1", "l3", "l5"]);
+  });
+});
+
+describe("createLinkOnHome：新建按「分类末尾」提交并读回完整 DTO", () => {
+  it("显式送全局 MAX+1 的 sortOrder，返回读回的 DTO（并入 store 由调用方做）", async () => {
+    const created = link("l5", "c1", "新链接", 4);
+    createMock.mockResolvedValue({ id: "l5" });
+    listLinksMock.mockResolvedValue([...adminData().links, created]);
+
+    const saved = await useNavStore.getState().createLinkOnHome({
+      categoryId: "c1",
+      title: "新链接",
+      url: "https://example.com/l5",
+    });
+
+    // 契约省略 sortOrder 会兜底 0（插到分类最前），这里必须显式给全局 MAX+1
+    expect(createMock).toHaveBeenCalledWith({
+      categoryId: "c1",
+      title: "新链接",
+      url: "https://example.com/l5",
+      sortOrder: 4,
+    });
+    expect(saved).toEqual(created);
+    // 只读回、不整表替换：store 由 applySavedLink 并入
+    expect(ids(adminData().links)).toEqual(["l1", "l2", "l3", "l4"]);
+  });
+
+  it("待删链接占的槽位也算进基数（避免与待删行同号）", async () => {
+    useNavStore.getState().removeLinkOnHome("l4");
+    createMock.mockResolvedValue({ id: "l5" });
+    listLinksMock.mockResolvedValue([
+      ...adminData().links,
+      link("l5", "c1", "新链接", 4),
+    ]);
+
+    await useNavStore.getState().createLinkOnHome({
+      categoryId: "c1",
+      title: "新链接",
+      url: "https://example.com/l5",
+    });
+
+    expect(createMock).toHaveBeenCalledWith(
+      expect.objectContaining({ sortOrder: 4 }),
+    );
+  });
+
+  it("读回不到这条链接：报「已创建但读回失败」，不重试创建", async () => {
+    createMock.mockResolvedValue({ id: "l5" });
+    listLinksMock.mockResolvedValue([...adminData().links]);
+
+    await expect(
+      useNavStore.getState().createLinkOnHome({
+        categoryId: "c1",
+        title: "新链接",
+        url: "https://example.com/l5",
+      }),
+    ).rejects.toThrow("链接已创建，但读回失败，请刷新页面后确认");
+    expect(createMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("创建失败：错误原样透传，不读列表", async () => {
+    createMock.mockRejectedValue(new Error("离线"));
+
+    await expect(
+      useNavStore.getState().createLinkOnHome({
+        categoryId: "c1",
+        title: "新链接",
+        url: "https://example.com/l5",
+      }),
+    ).rejects.toThrow("离线");
+    expect(listLinksMock).not.toHaveBeenCalled();
   });
 });
 

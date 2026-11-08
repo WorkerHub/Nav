@@ -9,7 +9,9 @@ import {
   logout as apiLogout,
   verifyTotp as apiVerifyTotp,
   adminDeleteLink,
+  adminCreateLink,
   adminListAll,
+  adminListLinks,
   adminMoveLink,
   adminReorderCategories,
   adminReorderEngines,
@@ -18,6 +20,7 @@ import {
   UnauthorizedError,
   ApiError,
   type AdminData,
+  type CreateLinkInput,
   type LoginResult,
 } from "@/lib/api";
 import { buildMoveIds } from "@/lib/link-order";
@@ -139,8 +142,13 @@ interface NavState {
   undoRemoveLink: (linkId: string) => void;
   /** 退出编辑模式 / 页面卸载：待落库的删除立即落库 */
   flushPendingLinkDeletes: () => void;
-  /** 后台链接弹窗保存后：就地替换 store 里的链接并投影（不重拉） */
-  applyEditedLink: (link: AdminLink) => void;
+  /** 后台链接弹窗保存后：就地替换 store 里的链接并投影（不重拉）；不存在则追加 */
+  applySavedLink: (link: AdminLink) => void;
+  /**
+   * 首页编辑模式新建链接：定好「分类末尾」的 sortOrder 提交，再读回完整 DTO 交给调用方。
+   * 不直接改 store（并入走 `applySavedLink`，与编辑保存同一条路径）。
+   */
+  createLinkOnHome: (input: CreateLinkInput) => Promise<AdminLink>;
 
   /** 设置保存成功后就地刷新 store 里所有存活的 settings 切片（三片原子更新） */
   patchAdminSettings: (settings: SiteSettings) => void;
@@ -422,17 +430,40 @@ export const useNavStore = create<NavState>((set, get) => ({
     }
   },
 
-  applyEditedLink: (link) => {
+  applySavedLink: (link) => {
     const data = get().adminData;
-    if (!data || !data.links.some((item) => item.id === link.id)) return;
+    if (!data) return;
+    const exists = data.links.some((item) => item.id === link.id);
     const next: AdminData = {
       ...data,
-      links: data.links.map((item) => (item.id === link.id ? link : item)),
+      links: exists
+        ? data.links.map((item) => (item.id === link.id ? link : item))
+        : [...data.links, link],
     };
     set((state) => ({
       adminData: next,
       ...editProjection(next, state.privateData),
     }));
+  },
+
+  createLinkOnHome: async (input) => {
+    if (!get().adminData) throw new Error("编辑数据未加载");
+    // 排在在飞的排序 / 拖动之后落库：这次新建才是顺序相关的最后一次写（也顺带
+    // 等在飞的拖动回滚落定，下面取的最大序号才是稳定的）
+    await get().settleLinkOrder();
+    const data = get().adminData;
+    if (!data) throw new Error("编辑数据未加载");
+    // 契约允许显式给 sortOrder；省略时后端兜底 0（新链接会插到分类最前），
+    // 这里取全局 MAX+1，让它落到分类末尾。基数含待删链接，避免与待删行撞号。
+    const { id } = await adminCreateLink({
+      ...input,
+      sortOrder: nextLinkSortOrder(data.links),
+    });
+    // POST 只回 {id}：完整 DTO 从列表端点读回（不本地拼 createdAt/updatedAt）。
+    // 只取命中那一条、不整表替换：待删链接与在飞状态因此不受影响。
+    const created = (await adminListLinks()).find((link) => link.id === id);
+    if (!created) throw new Error("链接已创建，但读回失败，请刷新页面后确认");
+    return created;
   },
 
   defaultEngine: () => {
@@ -838,6 +869,19 @@ interface PendingLinkDelete {
 }
 
 const pendingLinkDeletes = new Map<string, PendingLinkDelete>();
+
+/**
+ * 新建链接的全局 sortOrder：全表 MAX+1（链接 sort_order 是跨分类、跨场景的一条全局序列）。
+ * 待删链接还没落库、行还在服务端，它们占的槽位也算进基数，否则新建行可能与待删行同号。
+ */
+function nextLinkSortOrder(links: readonly AdminLink[]): number {
+  let max = -1;
+  for (const link of links) max = Math.max(max, link.sortOrder);
+  for (const record of pendingLinkDeletes.values()) {
+    max = Math.max(max, record.link.sortOrder);
+  }
+  return max + 1;
+}
 
 function toSiteLink(link: AdminLink): SiteLink {
   return {

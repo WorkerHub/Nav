@@ -11,13 +11,6 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -30,16 +23,13 @@ import {
   deleteReplacedAsset,
   useAssetDraftCleanup,
 } from "@/components/admin/asset-upload";
-import { LinkEditDialog } from "@/components/admin/link-edit-dialog";
-import { SiteIcon } from "@/components/site-icon";
 import {
   adminCreateCategory,
   adminDeleteCategory,
-  adminDeleteLink,
   adminUpdateCategory,
 } from "@/lib/api";
 import { useNavStore } from "@/lib/nav-store";
-import type { AdminCategory, AdminLink, Visibility } from "@/lib/types";
+import type { AdminCategory, Visibility } from "@/lib/types";
 
 /**
  * 分类 CRUD + dnd-kit 拖拽排序（分类列表由调用方按当前场景过滤后传入）。
@@ -234,161 +224,6 @@ export function CategoryPanel({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
-  );
-}
-
-/** 「所有」筛选项的哨兵值：Radix Select 不允许 SelectItem 用空串（空串代表未选） */
-const ALL_CATEGORIES = "__all__";
-
-/** 链接 CRUD + 分类内排序（后台 links 为扁平列表；按当前场景的分类 id 过滤） */
-export function LinkPanel({
-  categories,
-  links,
-  onChanged,
-}: {
-  /** 当前场景的分类（已过滤）：分类选择器只列这些，新建链接只归当前场景 */
-  categories: AdminCategory[];
-  /** 全量链接：展示按当前场景过滤，排序重建仍用全局 ids（链接 sort_order 语义不变） */
-  links: AdminLink[];
-  onChanged: () => void;
-}) {
-  const [categoryId, setCategoryId] = React.useState<string>(ALL_CATEGORIES);
-  const category = categories.find((c) => c.id === categoryId);
-  // 链接没有场景字段：其场景由所属分类唯一决定，这里经分类 id 过滤（保持全局 sortOrder）
-  const sceneCategoryIds = new Set(categories.map((c) => c.id));
-  const sceneLinks = links.filter((l) => sceneCategoryIds.has(l.categoryId));
-  // 「所有」：不过滤分类，直接按全局 sortOrder 展示当前场景全部链接
-  const categoryLinks = (
-    category
-      ? sceneLinks.filter((l) => l.categoryId === category.id)
-      : sceneLinks
-  ).sort((a, b) => a.sortOrder - b.sortOrder);
-  const [editingId, setEditingId] = React.useState<string | null>(null);
-  const [creating, setCreating] = React.useState(false);
-
-  const openCreate = () => {
-    if (!category) {
-      toast.error("请先选择一个分类");
-      return;
-    }
-    setEditingId(null);
-    setCreating(true);
-  };
-
-  const openEdit = (id: string) => {
-    // 「所有」视图下 categoryLinks 就是当前场景的全部链接，因此编辑照样可用，
-    // 预选值由弹窗自己按链接实际所属分类填写。
-    setEditingId(id);
-    setCreating(false);
-  };
-
-  const closeDialog = () => {
-    setCreating(false);
-    setEditingId(null);
-  };
-
-  const dialogLink = editingId
-    ? (links.find((l) => l.id === editingId) ?? null)
-    : null;
-
-  const remove = async (id: string) => {
-    await adminDeleteLink(id);
-    toast.success("链接已删除");
-    onChanged();
-  };
-
-  const reorder = async (orderedIds: string[]) => {
-    // 契约 reorder 为全局 ids 列表（sort_order 全局）；此处重建全量顺序，
-    // 仅替换当前分类链接的相对位置，其余分类链接保持原有相对顺序。
-    const selectedSet = new Set(orderedIds);
-    const sorted = [...links].sort((a, b) => a.sortOrder - b.sortOrder);
-    const firstIdx = sorted.findIndex((l) => selectedSet.has(l.id));
-    const before: string[] = [];
-    const after: string[] = [];
-    sorted.forEach((l, i) => {
-      if (selectedSet.has(l.id)) return;
-      if (i < firstIdx) before.push(l.id);
-      else after.push(l.id);
-    });
-    try {
-      await useNavStore
-        .getState()
-        .reorderLinks([...before, ...orderedIds, ...after]);
-    } catch {
-      toast.error("排序失败，已恢复原顺序");
-    }
-  };
-
-  return (
-    <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between gap-2">
-        <h2 className="font-heading text-lg font-semibold">链接</h2>
-        <div className="flex items-center gap-2">
-          <Select
-            value={category ? categoryId : ALL_CATEGORIES}
-            onValueChange={setCategoryId}
-          >
-            <SelectTrigger className="w-40" aria-label="选择分类">
-              <SelectValue placeholder="选择分类" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL_CATEGORIES}>所有</SelectItem>
-              {categories.map((c) => (
-                <SelectItem key={c.id} value={c.id}>
-                  {c.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Button onClick={openCreate}>新建链接</Button>
-        </div>
-      </div>
-
-      {categories.length > 0 ? (
-        <SortableList
-          entries={categoryLinks.map((l) => ({
-            id: l.id,
-            label: l.title,
-            meta: (
-              <span className="flex items-center gap-2">
-                <SiteIcon
-                  title={l.title}
-                  url={l.url}
-                  iconUrl={l.iconUrl}
-                  size={20}
-                />
-                <Badge
-                  variant={l.visibility === "private" ? "default" : "secondary"}
-                >
-                  {l.visibility === "private" ? "私有" : "公开"}
-                </Badge>
-              </span>
-            ),
-          }))}
-          onReorder={reorder}
-          onEdit={openEdit}
-          onRemove={remove}
-          confirmRemove
-          removeDescription="删除链接后无法恢复，请确认。"
-        />
-      ) : (
-        <p className="text-sm text-muted-foreground">
-          暂无分类，请先创建分类。
-        </p>
-      )}
-
-      <LinkEditDialog
-        open={creating || !!dialogLink}
-        link={dialogLink}
-        categories={categories}
-        defaultCategoryId={category?.id}
-        onClose={closeDialog}
-        onSaved={() => {
-          closeDialog();
-          onChanged();
-        }}
-      />
     </div>
   );
 }

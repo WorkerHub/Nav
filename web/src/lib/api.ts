@@ -534,7 +534,7 @@ export async function adminReorderScenes(ids: string[]): Promise<void> {
 }
 
 // 链接
-export async function adminCreateLink(input: {
+export interface CreateLinkInput {
   title: string;
   url: string;
   categoryId: string;
@@ -542,12 +542,28 @@ export async function adminCreateLink(input: {
   description?: string | null;
   sortOrder?: number;
   visibility?: "public" | "private";
-}): Promise<AdminLink> {
+}
+
+/**
+ * 新建链接。契约（docs/api-contract.md §链接）只回 **201 `{id}`**，不回整条 DTO：
+ * 需要完整对象的调用方（首页编辑模式要就地渲染新砖）自己用 `adminListLinks()` 读回。
+ * dev mock 返回整条 DTO，结构上是本类型的一个超集，兼容。
+ */
+export async function adminCreateLink(
+  input: CreateLinkInput,
+): Promise<{ id: string }> {
   if (USE_MOCK) return (await devMock()).createLink(input);
-  return request<AdminLink>(`${API.admin}/links`, {
+  return request<{ id: string }>(`${API.admin}/links`, {
     method: "POST",
     body: JSON.stringify(input),
   });
+}
+
+/** 后台链接全量（扁平，按服务端顺序）：新建后读回完整 DTO 用。 */
+export async function adminListLinks(): Promise<AdminLink[]> {
+  if (USE_MOCK) return (await devMock()).adminListAll().then((d) => d.links);
+  const data = await request<{ links: AdminLink[] }>(`${API.admin}/links`);
+  return data.links;
 }
 
 export async function adminUpdateLink(
