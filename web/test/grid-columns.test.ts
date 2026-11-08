@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   CLASSIC_MAX_GAP,
   CLASSIC_MIN_GAP,
+  CLASSIC_TILE_HEIGHT_CLASS,
+  CLASSIC_TILE_HEIGHTS,
   CLASSIC_TILE_SIZE,
   CLASSIC_TILE_SIZES,
-  CLASSIC_TILE_SIZE_CLASS,
+  CLASSIC_TILE_WIDTH_CLASS,
   DEFAULT_COLUMNS,
   classicGridMetrics,
   resolveColumns,
@@ -43,8 +45,8 @@ describe("resolveColumns：columns 读侧兜底", () => {
  * classic 的排布参数：行组最大宽度 = n×141.5 + (n−1)×48；水平间距 12→48 之间
  * 随容器宽度自然增长（n = 1 时没有砖间距，固定最小值）。
  */
-describe("classicGridMetrics：固定方砖 + 间距调个数", () => {
-  it("砖是固定 141.5px 方砖（当前默认 8 列在 1216px 内容宽下的实际砖宽）", () => {
+describe("classicGridMetrics：定宽砖 + 间距调个数", () => {
+  it("砖宽固定 141.5px（当前默认 8 列在 1216px 内容宽下的实际砖宽）", () => {
     expect(CLASSIC_TILE_SIZE).toBe(141.5);
     expect(CLASSIC_MIN_GAP).toBe(12);
     expect(CLASSIC_MAX_GAP).toBe(48);
@@ -85,15 +87,25 @@ describe("classicGridMetrics：固定方砖 + 间距调个数", () => {
  * 算法结构不变（见 lib/grid-columns.ts）。
  */
 describe("classicGridMetrics：tileSize 三档", () => {
-  it("三档砖宽与静态尺寸类一一对应", () => {
+  it("三档砖宽 / 砖高与静态尺寸类一一对应（宽入排布、高随图标与文字行反推）", () => {
     expect(CLASSIC_TILE_SIZES).toEqual({
       large: 141.5,
       medium: 113,
       small: 92,
     });
+    // 砖高 = 图标盒 + 2×gap + 两行名称 + 一行网址 + 上下内距 + 边框 + 余量，
+    // 三档同一套算法反推（见 lib/grid-columns.ts）
+    expect(CLASSIC_TILE_HEIGHTS).toEqual({
+      large: 185,
+      medium: 144,
+      small: 119,
+    });
     for (const size of TILE_SIZE_OPTIONS) {
-      expect(CLASSIC_TILE_SIZE_CLASS[size]).toBe(
-        `size-[${CLASSIC_TILE_SIZES[size]}px]`,
+      expect(CLASSIC_TILE_WIDTH_CLASS[size]).toBe(
+        `w-[${CLASSIC_TILE_SIZES[size]}px]`,
+      );
+      expect(CLASSIC_TILE_HEIGHT_CLASS[size]).toBe(
+        `h-[${CLASSIC_TILE_HEIGHTS[size]}px]`,
       );
     }
     expect(CLASSIC_TILE_SIZE).toBe(CLASSIC_TILE_SIZES.large);

@@ -108,7 +108,7 @@
 
 `linkStyle`：首页链接样式，`classic`（默认）| `compact` | `wide`。存量库无此键（或存量值不在枚举内）时按 `classic` 返回。
 
-`tileSize`：classic 砖块尺寸，`large`（默认，141.5px）| `medium`（113px）| `small`（92px）。存量库无此键（或存量值不在枚举内）时按 `large` 返回；仅作用于 classic 与首页编辑模式的方块，`compact` / `wide` 的排布不受影响。
+`tileSize`：classic 砖块尺寸，`large`（默认，141.5px）| `medium`（113px）| `small`（92px）。存量库无此键（或存量值不在枚举内）时按 `large` 返回；仅作用于 classic 与首页编辑模式的砖，`compact` / `wide` 的排布不受影响。
 
 `showUrl`：首页链接卡是否显示网址，默认 `true`（保持改动前的呈现）。存量库无此键时按 `true` 返回。
 
@@ -237,7 +237,7 @@ Passkey（WebAuthn，/api/auth/passkey/*，@simplewebauthn/server v14）：
 
 `linkStyle`：首页链接样式。存储键 `link_style`，值 `"classic"`/`"compact"`/`"wide"`；库中**无此键**（存量库）时按 `classic` 返回，存量脏值同样归一为 `classic`（不改写库行）。写入只接受这三个字符串值（非字符串一律拒绝），其他值返回 400 `linkStyle must be 'classic', 'compact' or 'wide'`，且一次被拒的请求不会写入同包的任何设置键。
 
-`tileSize`：classic 砖块尺寸。存储键 `tile_size`，值 `"large"`（默认，砖 141.5px）/`"medium"`（113px）/`"small"`（92px）；库中**无此键**（存量库）时按 `large` 返回，存量脏值同样归一为 `large`（不改写库行）。写入只接受这三个字符串值（非字符串一律拒绝），其他值返回 400 `tileSize must be 'large', 'medium' or 'small'`，且一次被拒的请求不会写入同包的任何设置键。该值只影响 classic 与首页编辑模式的方砖；`compact` / `wide` 忽略它。
+`tileSize`：classic 砖块尺寸。存储键 `tile_size`，值 `"large"`（默认，砖 141.5px）/`"medium"`（113px）/`"small"`（92px）；库中**无此键**（存量库）时按 `large` 返回，存量脏值同样归一为 `large`（不改写库行）。写入只接受这三个字符串值（非字符串一律拒绝），其他值返回 400 `tileSize must be 'large', 'medium' or 'small'`，且一次被拒的请求不会写入同包的任何设置键。该值只影响 classic 与首页编辑模式的砖宽；`compact` / `wide` 忽略它。
 
 `columns` 允许 `0–12`，其中 `0` 表示**未配置**（用默认值）：`0` 原样存入并原样返回，不会被替换成默认列数。`GET /api/admin/settings` 对未配置的库返回 `columns: 0`，所以 `0–12` 都能往返提交；超出范围返回 400 `columns must be between 0 and 12`。
 

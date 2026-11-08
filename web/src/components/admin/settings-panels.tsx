@@ -273,7 +273,7 @@ export function SettingsPanel({
     searchNewTab: settings.searchNewTab ?? true,
     // 后端该键未落地 / 旧缓存时同样缺字段：契约缺省 classic（读侧统一兜底）
     linkStyle: resolveLinkStyle(settings),
-    // 缺字段时同样回大号方砖（与 linkStyle 同一套读侧兜底）
+    // 缺字段时同样回大号砖宽（与 linkStyle 同一套读侧兜底）
     tileSize: resolveTileSize(settings),
     // 缺字段时按默认开：首页照旧显示网址（与 linkStyle 同一套读侧兜底）
     showUrl: resolveShowUrl(settings),
@@ -372,7 +372,7 @@ export function SettingsPanel({
           成块列数与砖块尺寸只对 classic 档有意义（compact / wide 的排法固定，#24 口径）：
           非 classic 时整块隐藏、不加说明文字。`form.columns` / `form.tileSize` 始终留在
           表单里（保存照旧整包提交），所以隐藏期间的值不会丢，切回 classic 即回显原值。
-          列数语义是「成块列数」：桌面按这个数成块、整块居中；卡片为固定方砖，窄屏
+          列数语义是「成块列数」：桌面按这个数成块、整块居中；卡片宽度固定，窄屏
           放不下整块时一行会自然少放几块，不满一行的末行从左起排（与满行同列）。
         */}
         {form.linkStyle === "classic" && (
@@ -392,14 +392,15 @@ export function SettingsPanel({
                 />
               </div>
               <p className="text-sm text-muted-foreground">
-                卡片是固定方砖，桌面按这个数排成一块并整体居中；屏幕变窄时一行会少于这个数。
+                卡片是固定宽度，桌面按这个数排成一块并整体居中；屏幕变窄时一行会少于这个数。
               </p>
             </div>
             <div className="grid gap-2">
               <Label htmlFor="set-tile-size">砖块尺寸</Label>
               {/*
-                砖块尺寸（冻结契约 tileSize）：全站统一、访客不可切；三档都是方砖，
-                切换只改边长与砖内字号，保存后公共页刷新即生效。控件沿用上方 Select 范式。
+                砖块尺寸（冻结契约 tileSize）：全站统一、访客不可切；三档砖宽不同（下拉里
+                报的是砖宽），砖高随同档图标盒与两行文字反推，切换只改砖宽、砖高与
+                砖内字号，保存后公共页刷新即生效。控件沿用上方 Select 范式。
               */}
               <Select
                 value={resolveTileSize(form)}
@@ -419,7 +420,7 @@ export function SettingsPanel({
                 </SelectContent>
               </Select>
               <p className="text-sm text-muted-foreground">
-                只影响经典样式的方砖；全站统一，访客不可切换，保存后公共页刷新即生效。
+                只影响经典样式的卡片宽度；全站统一，访客不可切换，保存后公共页刷新即生效。
               </p>
             </div>
           </>

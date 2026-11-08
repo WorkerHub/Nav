@@ -348,18 +348,20 @@ describe("进入 / 退出编辑模式", () => {
 
     expect(grid()).toHaveStyle({ maxWidth: "1240px" });
     expect(screen.getByRole("link", { name: /MDN/ })).toHaveClass(
-      "size-[113px]",
+      "w-[113px]",
+      "h-[144px]",
     );
 
     await enterEdit(user);
 
     expect(grid()).toHaveStyle({ maxWidth: "1240px" });
     expect(screen.getByRole("button", { name: "MDN" })).toHaveClass(
-      "size-[113px]",
+      "w-[113px]",
+      "h-[144px]",
     );
     expect(
       screen.getByRole("button", { name: "向「开发」新增链接" }),
-    ).toHaveClass("size-[113px]");
+    ).toHaveClass("w-[113px]", "h-[144px]");
   });
 });
 

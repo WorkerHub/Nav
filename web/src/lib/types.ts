@@ -66,8 +66,10 @@ export interface SearchEngine {
 export type LinkStyle = "classic" | "compact" | "wide";
 
 /**
- * classic 砖块尺寸（站点设置 `tileSize`）：`large`（141.5px）/`medium`（113px）/
+ * classic 砖块尺寸（站点设置 `tileSize`）：`large`（砖宽 141.5px）/`medium`（113px）/
  * `small`（92px）。缺省 `large`；与 `linkStyle` 同为全站统一、访客不可切。
+ * 这里报的是**砖宽**（成块排布用）；砖高随同档图标盒与文字行数一起定档，
+ * 见 lib/grid-columns.ts 的 `CLASSIC_TILE_HEIGHTS`。
  */
 export type TileSize = "large" | "medium" | "small";
 
@@ -91,7 +93,7 @@ export interface SiteSettings {
   /**
    * classic 砖块尺寸（后端 KV `tile_size`，缺省 `large`）。
    * 声明为可选是有意的：后端该键未落地 / 浏览器里的旧缓存没有它时，读侧统一用
-   * `resolveTileSize`（lib/tile-size.ts）兜底 `large`，与 #35 的 141.5px 一致。
+   * `resolveTileSize`（lib/tile-size.ts）兜底 `large`，与 #35 的砖宽 141.5px 一致。
    */
   tileSize?: TileSize;
   /**

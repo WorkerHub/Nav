@@ -12,7 +12,7 @@ import type { TileSize } from "@/lib/types";
  * 砖宽由站点设置 `tileSize` 决定三档（`large` 141.5 / `medium` 113 / `small` 92，
  * 见 `CLASSIC_TILE_SIZES`）；`columns` 与砖宽一起算行组宽度与间距。
  *
- * 排布模型（规格已定版）：砖是**固定边长方砖**，不再被容器拉伸。桌面按 `columns`
+ * 排布模型（规格已定版）：砖是**定宽定高的卡片**，不再被容器拉伸。桌面按 `columns`
  * 成块：一行正好 `columns` 块，行组宽度封顶 `maxWidth`，整块水平居中；窄屏放不
  * 下整块时一行自然少放几块，块仍居中、不溢出。多出来的宽度先进砖间距（封顶
  * `CLASSIC_MAX_GAP`），再进行整块两侧的对称留白。不满一行的末行从行组左端起排
@@ -26,13 +26,16 @@ import type { TileSize } from "@/lib/types";
 export const DEFAULT_COLUMNS = 8;
 
 /**
- * classic 三档方砖的边长（px，宽高相同）。`large` 取改动前默认梯度下桌面砖的
+ * classic 三档砖的**宽度**（px，成块排布与间距都按它算）。`large` 取改动前默认梯度下桌面砖的
  * 实际宽度 —— 桌面内容宽 1216px（`main` 的 max-w-7xl 1280 减 sm:px-8 的 64），
  * 8 列、间距 12px 时 (1216 − 7×12) / 8 = 141.5。取整到 142 会让 8 块加 7 个
  * 12px 间距超过 1216，默认 8 列就会掉成 7 块一行，所以保留这半像素。
  *
  * medium / small 以 141.5 × 0.8 = 113.2、141.5 × 0.65 = 91.975 为起点取整到
  * 整数像素（113 / 92），避免 1x 屏亚像素发虚；实际比例 1 : 0.7986 : 0.6502。
+ *
+ * 砖高不是同一个数：图标盒固定占砖宽 60%（`CLASSIC_ICON_BOX`），定高的正方形
+ * 放不下「图标 + 名称 + 网址」，所以高度另行定档（见 `CLASSIC_TILE_HEIGHTS`）。
  */
 export const CLASSIC_TILE_SIZES: Record<TileSize, number> = {
   large: 141.5,
@@ -41,18 +44,44 @@ export const CLASSIC_TILE_SIZES: Record<TileSize, number> = {
 };
 
 /**
- * 与 `CLASSIC_TILE_SIZES` 一一对应的 Tailwind 静态尺寸类。
+ * classic 三档砖的**高度**（px，含 1px 边框与上下内距）。
  *
- * 必须是源码里的字面量：Tailwind 只扫字面量生成 CSS，动态拼 `size-[${n}px]`
- * 会漏生成。单测会逐档校验这里与 `CLASSIC_TILE_SIZES` 同步。
+ * 按砖内内容逐档反推（内容 = 图标盒 + 2×gap + 两行名称 + 一行网址 + 上下内距
+ * + 1px 边框 ×2，密度见 `CLASSIC_TILE_DENSITY`），另给 2px 余量，避免亚像素
+ * 取整把内容挤进去：
+ * large 85+8+8+40+16+12+12+2 = 183，取 185；
+ * medium 68+6+6+32+16+6+6+2 = 142，取 144；
+ * small 55+4+4+32+16+2+2+2 = 117，取 119。
+ * 高宽比三档一致（≈1.3），所以换档时砖的观感不跳。
  */
-export const CLASSIC_TILE_SIZE_CLASS: Record<TileSize, string> = {
-  large: "size-[141.5px]",
-  medium: "size-[113px]",
-  small: "size-[92px]",
+export const CLASSIC_TILE_HEIGHTS: Record<TileSize, number> = {
+  large: 185,
+  medium: 144,
+  small: 119,
 };
 
-/** 兼容既有引用：默认（large）砖边长。 */
+/**
+ * 与 `CLASSIC_TILE_SIZES` 一一对应的 Tailwind 静态宽度类。
+ *
+ * 必须是源码里的字面量：Tailwind 只扫字面量生成 CSS，动态拼 `w-[${n}px]`
+ * 会漏生成。单测会逐档校验这里与 `CLASSIC_TILE_SIZES` 同步。
+ */
+export const CLASSIC_TILE_WIDTH_CLASS: Record<TileSize, string> = {
+  large: "w-[141.5px]",
+  medium: "w-[113px]",
+  small: "w-[92px]",
+};
+
+/**
+ * 与 `CLASSIC_TILE_HEIGHTS` 一一对应的 Tailwind 静态高度类（同为字面量，理由同上）。
+ */
+export const CLASSIC_TILE_HEIGHT_CLASS: Record<TileSize, string> = {
+  large: "h-[185px]",
+  medium: "h-[144px]",
+  small: "h-[119px]",
+};
+
+/** 兼容既有引用：默认（large）砖宽。 */
 export const CLASSIC_TILE_SIZE = CLASSIC_TILE_SIZES.large;
 
 /** classic 砖之间的最小水平间距（px）：与改动前的 gap-3 一致。 */
