@@ -42,9 +42,12 @@ export function navigateSameTabWithoutReferrer(url: string) {
 export function SearchBar({
   engines,
   openInNewTab = true,
+  onQueryChange,
 }: {
   engines: SearchEngine[];
   openInNewTab?: boolean;
+  /** 输入变化上报（首页编辑模式据此判断「搜索有内容」/输入即退出编辑） */
+  onQueryChange?: (query: string) => void;
 }) {
   const inputRef = React.useRef<HTMLInputElement>(null);
   const [engineId, setEngineId] = React.useState<string | null>(null);
@@ -135,7 +138,10 @@ export function SearchBar({
         <Input
           ref={inputRef}
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            onQueryChange?.(e.target.value);
+          }}
           className="h-11 border-transparent bg-transparent text-base shadow-none focus-visible:ring-0 dark:bg-transparent"
           aria-label="搜索关键词"
           autoComplete="off"

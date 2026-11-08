@@ -574,6 +574,25 @@ export async function adminReorderLinks(ids: string[]): Promise<void> {
   });
 }
 
+/**
+ * POST /api/admin/links/move —— 跨分类拖动的原子保存（#28 冻结契约）。
+ *
+ * `ids` 是重建后的**全局**顺序，落点 = `linkId` 在 `ids` 里的下标（不是目标分类末尾）；
+ * 服务端在同一个 `db.batch` 里改 `categoryId` 并写下标为 `sortOrder`，一起生效或一起回滚。
+ * 成功只回 `{success:true}`：前端以本地乐观状态为准、不整表重拉。
+ */
+export async function adminMoveLink(input: {
+  linkId: string;
+  categoryId: string;
+  ids: string[];
+}): Promise<void> {
+  if (USE_MOCK) return (await devMock()).moveLink(input);
+  await request(`${API.admin}/links/move`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
 // 搜索引擎
 export async function adminCreateEngine(input: {
   name: string;

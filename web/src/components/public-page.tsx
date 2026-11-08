@@ -1,5 +1,8 @@
 import * as React from "react";
+import { toast } from "sonner";
+import { LinkEditDialog } from "@/components/admin/link-edit-dialog";
 import { FadeIn } from "@/components/glass";
+import { HomeEditBoard } from "@/components/home-edit-board";
 import { CategorySection } from "@/components/link-grid";
 import { LoginDialog } from "@/components/login-dialog";
 import { PublicDock } from "@/components/public-dock";
@@ -26,6 +29,10 @@ import {
  * 链接呈现形态由站点设置 `linkStyle` 决定（缺省 classic），由数据层解析后传给
  * 分类区块，公共页与访客都无法在这里改。
  *
+ * 首页编辑模式（登录态专属，纯前端本地状态）：坞里的铅笔把页面切成
+ * `HomeEditBoard`（拖动排序/分组、✕ 延迟删除、单击复用后台编辑弹窗），
+ * 退出/刷新/Esc/切场景/输入搜索都回到正常模式；编辑模式里砖不再跳转。
+ *
  * 安全口径：未登录时私有区完全不渲染 —— privateData 未加载时组件树里没有私有区块，
  * 数据请求也只发 /api/public（未登录不请求 /api/private）。
  *
@@ -36,16 +43,26 @@ export function PublicPage({ onOpenAdmin }: { onOpenAdmin: () => void }) {
   const {
     publicData,
     privateData,
+    adminData,
     authStatus,
+    editMode,
     loadPublic,
     loadPrivate,
     logout,
     setLoginPrompt,
+    enterEditMode,
+    exitEditMode,
+    moveLinkOnHome,
+    removeLinkOnHome,
+    applyEditedLink,
   } = useNavStore();
   const authenticated = useAuthenticated();
   // 本机场景偏好（前后台共用）：只影响显示过滤，不写服务端
   const scenePreference = useScenePreferenceStore((s) => s.raw);
   const setScenePreference = useScenePreferenceStore((s) => s.setRaw);
+  // 搜索框内容只用于「编辑模式的进出门槛」，搜索本身仍由 SearchBar 自己持有
+  const [searchQuery, setSearchQuery] = React.useState("");
+  const [editingLinkId, setEditingLinkId] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     void loadPublic();
@@ -55,6 +72,24 @@ export function PublicPage({ onOpenAdmin }: { onOpenAdmin: () => void }) {
   React.useEffect(() => {
     if (authenticated) void loadPrivate();
   }, [authenticated, loadPrivate]);
+
+  // 页面卸载（跳后台 / 关页面前的路由变化）：退出编辑模式，待落库删除立即落库
+  React.useEffect(() => {
+    return () => {
+      useNavStore.getState().exitEditMode();
+    };
+  }, []);
+
+  // Esc 退出编辑模式；编辑弹窗打开时 Esc 归弹窗（关弹窗，不退出编辑模式）
+  React.useEffect(() => {
+    if (!editMode) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || editingLinkId) return;
+      exitEditMode();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [editMode, editingLinkId, exitEditMode]);
 
   // 契约：/api/private 返回与 /api/public 同结构的全量数据（公开+私有）。
   // 登录后直接以 privateData.categories 作为全量列表，不再拼接 public/private。
@@ -80,6 +115,51 @@ export function PublicPage({ onOpenAdmin }: { onOpenAdmin: () => void }) {
     categories.filter((c) => !publicIds.has(c.id)).map((c) => c.id),
   );
 
+  // 编辑弹窗与后台一致：只列当前场景的分类（按场景内顺序），链接取后台 DTO
+  const dialogCategories = React.useMemo(() => {
+    const all = adminData?.categories ?? [];
+    return (activeScene ? filterByScene(all, activeScene) : all)
+      .slice()
+      .sort((a, b) => a.sortOrder - b.sortOrder);
+  }, [adminData, activeScene]);
+  const editingLink =
+    (editingLinkId &&
+      adminData?.links.find((link) => link.id === editingLinkId)) ||
+    null;
+
+  const handleQueryChange = (query: string) => {
+    setSearchQuery(query);
+    // 编辑中输入搜索 → 自动退出编辑模式（搜索框照常可继续输入/提交）
+    if (editMode && query.trim() !== "") exitEditMode();
+  };
+
+  const handleToggleEdit = () => {
+    if (editMode) {
+      exitEditMode();
+      return;
+    }
+    // 搜索有内容时按钮无动作（规格 §3.2）
+    if (searchQuery.trim() !== "") return;
+    void enterEditMode().then((ok) => {
+      if (!ok) toast.error("进入编辑模式失败，请稍后重试");
+    });
+  };
+
+  const handleSceneChange = (sceneId: string) => {
+    // 编辑中切场景：先退出编辑（顺带落库待删），再切显示场景
+    if (editMode) exitEditMode();
+    setScenePreference(sceneId);
+  };
+
+  const handleMoveLink = React.useCallback(
+    (linkId: string, categoryId: string, afterId: string | null) => {
+      void moveLinkOnHome({ linkId, categoryId, afterId }).catch(() => {
+        toast.error("保存失败，已恢复原顺序");
+      });
+    },
+    [moveLinkOnHome],
+  );
+
   return (
     <div className="relative min-h-screen">
       {/* 背景层（与后台共用同一份实现）：全屏背景图 + 阅读性罩层 */}
@@ -87,11 +167,11 @@ export function PublicPage({ onOpenAdmin }: { onOpenAdmin: () => void }) {
 
       {/*
         正文：时钟块 → 搜索 → 分类区块。
-        底部留白 pb-88（352px）大于右下角坞的最大高度（场景组封顶 160 + 间距 8 +
-        按钮组 140 = 308px，再加坞离底边的 16px）：滚到页面底部时最后一行链接
-        完整露出，不会被固定坞盖住。
+        底部留白 pb-96（384px）大于右下角坞的最大高度（场景组封顶 160 + 间距 8 +
+        按钮组「编辑/主题/后台/退出」188 = 356px，再加坞离底边的 16px）：滚到页面
+        底部时最后一行链接完整露出，不会被固定坞盖住。
       */}
-      <main className="mx-auto flex max-w-7xl flex-col gap-10 px-4 pb-88 sm:px-8">
+      <main className="mx-auto flex max-w-7xl flex-col gap-10 px-4 pb-96 sm:px-8">
         <FadeIn className="pt-10 sm:pt-16">
           <SiteClock
             siteTitle={settings?.siteTitle ?? "我的导航"}
@@ -105,33 +185,59 @@ export function PublicPage({ onOpenAdmin }: { onOpenAdmin: () => void }) {
             <SearchBar
               engines={siteData.searchEngines}
               openInNewTab={siteData.settings.searchNewTab ?? true}
+              onQueryChange={handleQueryChange}
             />
           )}
         </FadeIn>
 
-        {/* 导航区：分类区块；场景切换在右下角坞里，不占用页面区 */}
-        <div className="flex flex-col gap-10">
-          {visibleCategories.map((category, i) => (
-            <FadeIn key={category.id} delay={Math.min(i * 0.05, 0.3)}>
-              <CategorySection
-                category={category}
-                privateZone={privateIds.has(category.id)}
-                linkStyle={linkStyle}
-              />
-            </FadeIn>
-          ))}
-        </div>
+        {/* 导航区：正常模式是外跳链接；编辑模式是 dnd-kit 拖动看板 */}
+        {editMode ? (
+          <HomeEditBoard
+            categories={visibleCategories}
+            linkStyle={linkStyle}
+            privateCategories={privateIds}
+            onEditLink={setEditingLinkId}
+            onRemoveLink={removeLinkOnHome}
+            onMoveLink={handleMoveLink}
+          />
+        ) : (
+          <div className="flex flex-col gap-10">
+            {visibleCategories.map((category, i) => (
+              <FadeIn key={category.id} delay={Math.min(i * 0.05, 0.3)}>
+                <CategorySection
+                  category={category}
+                  privateZone={privateIds.has(category.id)}
+                  linkStyle={linkStyle}
+                />
+              </FadeIn>
+            ))}
+          </div>
+        )}
       </main>
 
       {/* 右下角固定坞：上部场景图标、下部主题与登录态图标按钮 */}
       <PublicDock
         scenes={scenes}
         activeScene={activeScene}
-        onSceneChange={setScenePreference}
+        onSceneChange={handleSceneChange}
         authStatus={authStatus}
+        editMode={editMode}
+        onToggleEdit={handleToggleEdit}
         onOpenAdmin={onOpenAdmin}
         onLogin={() => setLoginPrompt(true)}
         onLogout={() => void logout()}
+      />
+
+      {/* 首页编辑模式的单击编辑：复用后台同一个链接弹窗，保存后就地生效 */}
+      <LinkEditDialog
+        open={!!editingLink}
+        link={editingLink}
+        categories={dialogCategories}
+        onClose={() => setEditingLinkId(null)}
+        onSaved={(link) => {
+          applyEditedLink(link);
+          setEditingLinkId(null);
+        }}
       />
 
       <LoginDialog />

@@ -558,6 +558,33 @@ export const mockDb = {
     persist(state);
   },
 
+  /**
+   * 与冻结契约 `POST /api/admin/links/move`（#28）同口径：改 categoryId + 按 ids 下标
+   * 重写 sortOrder，一次 persist 落盘（dev 联调用，真实事务语义以 worker 的 db.batch 为准）。
+   */
+  async moveLink(input: {
+    linkId: string;
+    categoryId: string;
+    ids: string[];
+  }): Promise<void> {
+    const state = load();
+    const item = state.links.find((l) => l.id === input.linkId);
+    if (!item) throw new Error("not found");
+    if (!state.categories.some((c) => c.id === input.categoryId)) {
+      throw new Error("categoryId does not exist");
+    }
+    const stamp = now();
+    item.categoryId = input.categoryId;
+    item.updatedAt = stamp;
+    input.ids.forEach((id, index) => {
+      const link = state.links.find((l) => l.id === id);
+      if (!link) return;
+      link.sortOrder = index;
+      link.updatedAt = stamp;
+    });
+    persist(state);
+  },
+
   async createEngine(input: {
     name: string;
     urlTemplate: string;
