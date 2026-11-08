@@ -6,7 +6,10 @@ import {
   LINK_ICON_BOX,
   LinkGrid,
 } from "@/components/link-grid";
-import { CLASSIC_TILE_SIZE } from "@/lib/grid-columns";
+import {
+  CLASSIC_TILE_HEIGHT_CLASS,
+  CLASSIC_TILE_WIDTH_CLASS,
+} from "@/lib/grid-columns";
 import type { LinkStyle, SiteCategory, SiteLink } from "@/lib/types";
 
 const links: SiteLink[] = [
@@ -45,10 +48,10 @@ function iconBox(link: HTMLElement, linkStyle: LinkStyle): HTMLElement {
 }
 
 describe("LinkGrid：三档样式", () => {
-  it("缺省（不传 linkStyle）= classic：固定方砖、图标上名称下域名小字，整块居中 + 末行左对齐", () => {
+  it("缺省（不传 linkStyle）= classic：定尺寸砖、图标上名称下域名小字，整块居中 + 末行左对齐", () => {
     const { container } = render(<LinkGrid links={links} />);
 
-    // classic 不再是网格：固定方砖 + 弹性换行；砖从左起排（末行与满行同列），
+    // classic 不再是网格：定尺寸砖 + 弹性换行；砖从左起排（末行与满行同列），
     // 整块靠 mx-auto + 内联 maxWidth 居中
     const gridEl = grid(container);
     expect(gridEl).toHaveClass(
@@ -66,17 +69,27 @@ describe("LinkGrid：三档样式", () => {
 
     const link = screen.getByRole("link", { name: /GitHub/ });
     expect(link).toHaveClass("glass", "flex-col", "text-center");
-    // 方砖：宽高固定（与常量同源，改了任一处这条会挂）
-    expect(link).toHaveClass(`size-[${CLASSIC_TILE_SIZE}px]`, "shrink-0");
+    // 砖：宽高固定（与常量同源，改了任一处这条会挂）
+    expect(link).toHaveClass(
+      CLASSIC_TILE_WIDTH_CLASS.large,
+      CLASSIC_TILE_HEIGHT_CLASS.large,
+      "shrink-0",
+    );
     expect(link).not.toHaveClass("h-full");
     expect(link).not.toHaveClass("w-full");
-    // FadeIn 那层是 flex item，不能把方砖压小
+    // FadeIn 那层是 flex item，不能把砖压小
     expect(link.parentElement).toHaveClass("shrink-0");
     expect(link).toHaveTextContent("github.com");
-    expect(link.querySelector("img")).toHaveAttribute("width", "44");
-    // 图标在固定 44×44 的盒子里等比缩放、填满盒子
+    expect(link.querySelector("img")).toHaveAttribute(
+      "width",
+      String(CLASSIC_ICON_BOX.large),
+    );
+    // 图标在固定 85×85（砖宽 60%）的盒子里等比缩放、填满盒子
     const box = iconBox(link, "classic");
-    expect(box).toHaveStyle({ width: "44px", height: "44px" });
+    expect(box).toHaveStyle({
+      width: `${CLASSIC_ICON_BOX.large}px`,
+      height: `${CLASSIC_ICON_BOX.large}px`,
+    });
     expect(box.querySelector("img")).toHaveClass("object-contain", "size-full");
   });
 
@@ -206,7 +219,8 @@ describe("LinkGrid：classic 成块列数（站点设置 columns）", () => {
     // 没有按列数生成的 grid-cols 类名了
     expect(gridEl.className).not.toContain("grid-cols");
     expect(screen.getByRole("link", { name: /GitHub/ })).toHaveClass(
-      `size-[${CLASSIC_TILE_SIZE}px]`,
+      CLASSIC_TILE_WIDTH_CLASS.large,
+      CLASSIC_TILE_HEIGHT_CLASS.large,
     );
   });
 
@@ -295,7 +309,8 @@ describe("LinkGrid：classic 砖块尺寸三档（tileSize）", () => {
         tileSize: "large" as const,
         px: 141.5,
         maxWidth: "1468px",
-        icon: 44,
+        icon: 85,
+        height: 185,
         titleClass: ["text-sm"],
         urlClass: ["text-xs"],
         gap: "gap-2",
@@ -305,7 +320,8 @@ describe("LinkGrid：classic 砖块尺寸三档（tileSize）", () => {
         tileSize: "medium" as const,
         px: 113,
         maxWidth: "1240px",
-        icon: 36,
+        icon: 68,
+        height: 144,
         titleClass: ["text-[13px]", "leading-4"],
         urlClass: ["text-xs"],
         gap: "gap-1.5",
@@ -315,7 +331,8 @@ describe("LinkGrid：classic 砖块尺寸三档（tileSize）", () => {
         tileSize: "small" as const,
         px: 92,
         maxWidth: "1072px",
-        icon: 28,
+        icon: 55,
+        height: 119,
         titleClass: ["text-xs"],
         urlClass: ["text-[11px]", "leading-4"],
         gap: "gap-1",
@@ -329,7 +346,12 @@ describe("LinkGrid：classic 砖块尺寸三档（tileSize）", () => {
       );
 
       const link = screen.getByRole("link", { name: /GitHub/ });
-      expect(link).toHaveClass(`size-[${c.px}px]`, c.gap, c.padding);
+      expect(link).toHaveClass(
+        `w-[${c.px}px]`,
+        `h-[${c.height}px]`,
+        c.gap,
+        c.padding,
+      );
       // 图标盒按档缩小，且与导出常量同源
       expect(CLASSIC_ICON_BOX[c.tileSize]).toBe(c.icon);
       expect(iconBox(link, "classic")).toHaveStyle({
@@ -366,7 +388,8 @@ describe("LinkGrid：classic 砖块尺寸三档（tileSize）", () => {
     );
     expect(grid(compact.container)).toHaveClass("lg:grid-cols-5");
     expect(screen.getByRole("link", { name: /GitHub/ })).not.toHaveClass(
-      "size-[92px]",
+      "w-[92px]",
+      "h-[119px]",
     );
     compact.unmount();
 
@@ -375,7 +398,8 @@ describe("LinkGrid：classic 砖块尺寸三档（tileSize）", () => {
     );
     expect(grid(wide.container)).toHaveClass("lg:grid-cols-3");
     expect(screen.getByRole("link", { name: /GitHub/ })).not.toHaveClass(
-      "size-[113px]",
+      "w-[113px]",
+      "h-[144px]",
     );
   });
 });

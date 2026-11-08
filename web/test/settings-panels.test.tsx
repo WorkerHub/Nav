@@ -391,13 +391,13 @@ describe("SettingsPanel：成块列数字段只在 classic 下显示", () => {
     }));
   });
 
-  it("classic（缺省）：显示「每行卡片数（1–12）」并回显已有值，附方砖说明", () => {
+  it("classic（缺省）：显示「每行卡片数（1–12）」并回显已有值，附卡片宽度说明", () => {
     render(<SettingsPanel settings={baseSettings} onChanged={vi.fn()} />);
 
     expect(screen.getByLabelText("每行卡片数（1–12）")).toHaveValue(6);
     expect(
       screen.getByText(
-        "卡片是固定方砖，桌面按这个数排成一块并整体居中；屏幕变窄时一行会少于这个数。",
+        "卡片是固定宽度，桌面按这个数排成一块并整体居中；屏幕变窄时一行会少于这个数。",
       ),
     ).toBeInTheDocument();
   });

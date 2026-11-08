@@ -4,7 +4,8 @@ import type { SiteSettings, TileSize } from "@/lib/types";
  * classic 砖块尺寸（站点设置 `tileSize`）的唯一取值来源：
  * 公共页解析与后台「站点设置」控件共用，避免两处各写一份枚举。
  *
- * 契约：枚举 `large | medium | small`，缺省 `large`（141.5px，即 #35 的方砖）。
+ * 契约：枚举 `large | medium | small`，缺省 `large`（砖宽 141.5px，即 #35 定版的
+ * 默认梯度砖宽）。
  * 后端未落地该键、或浏览器里是旧缓存（DTO 无此字段）时，`resolveTileSize`
  * 一律回落 `large` —— 与 `resolveLinkStyle` / `resolveShowUrl` 同一套读侧兜底。
  */

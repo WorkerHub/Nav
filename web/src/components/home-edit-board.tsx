@@ -54,17 +54,18 @@ import type { LinkStyle, SiteCategory, SiteLink, TileSize } from "@/lib/types";
  * 位移 6px 激活（单击不被吃掉）。拖拽覆盖层用 dnd-kit 原生 `DragOverlay`。
  *
  * 尺寸口径：砖的格子由 `linkGridLayout(linkStyle, columns, tileSize)` 给出（与普通模式
- * 同一个容器，classic 的成块列数与砖块尺寸取站点设置 `columns` / `tileSize`）；classic
- * 的砖壳是固定方砖（`size-[…]` 按三档静态类），普通模式与编辑模式完全同尺寸，名称与
- * 网址在砖内单行截断（`LinkTileContent` 的 `singleLine`）、悬停 `title` 看全称。✕ 角标
- * 定位在外层包一层上，自然落在方砖的右上角。拖拽预览用 dnd-kit 的 `DragOverlay`：包裹层
- * 尺寸由它按砖的实测矩形给定，砖规整后预览也就一致。
+ * 同一个容器，classic 的成块列数与砖宽取站点设置 `columns` / `tileSize`）；classic
+ * 的砖壳是定宽定高（`w-[…] h-[…]` 按三档静态类，高度随图标盒与两行文字反推），普通
+ * 模式与编辑模式完全同尺寸，名称与网址在砖内单行截断（`LinkTileContent` 的
+ * `singleLine`）、悬停 `title` 看全称。✕ 角标定位在外层包一层上，自然落在砖的右上角。
+ * 拖拽预览用 dnd-kit 的 `DragOverlay`：包裹层尺寸由它按砖的实测矩形给定，砖规整后
+ * 预览也就一致。
  *
- * 排布从「网格」改成「固定方砖 + 弹性换行 + 整块居中 + 末行左对齐」后，dnd-kit
+ * 排布从「网格」改成「定尺寸砖 + 弹性换行 + 整块居中 + 末行左对齐」后，dnd-kit
  * 侧不需要换策略：DOM 顺序、`SortableContext` 分组与投放 id 全不变；
  * `rectSortingStrategy` 只是按实测矩形做位移预览，砖全部等尺寸反而更准；
  * `closestCorners` 也不依赖网格。
- * 空分类的落点就是那块固定尺寸的「+」砖，命中面积随方砖确定。
+ * 空分类的落点就是那块固定尺寸的「+」砖，命中面积随砖确定。
  */
 
 /** 分类标题行投放目标（落到该分类末尾）的 id 前缀 */
@@ -89,7 +90,7 @@ const collisionDetection: CollisionDetection = (args) => {
 /**
  * compact / wide 的「+」砖高度（框内只有一个图标）：与同档一块砖一致 ——
  * compact 图标 20 单行、wide 图标 36 + 一行名称 + 一行域名。classic 不列在这里：
- * 它的方砖尺寸直接由砖壳的 `size-[141.5px]` 给定，无须估算高度。
+ * 它直接拿砖壳的定宽定高类（`w-[…] h-[…]`），无须估算高度。
  */
 const PLACEHOLDER_CLASS: Partial<Record<LinkStyle, string>> = {
   compact: "min-h-9",
@@ -211,7 +212,7 @@ function EditableTile({
       style={{ transform: CSS.Transform.toString(transform), transition }}
       className={cn(
         "relative select-none",
-        // classic 的砖壳自身就是固定方砖，外层包一层不能把它压缩
+        // classic 的砖壳自身就是定宽定高，外层包一层不能把它压缩
         linkStyle === "classic" && "shrink-0",
         isDragging && "opacity-40",
       )}
@@ -225,7 +226,7 @@ function EditableTile({
         className={cn(
           linkTileClassName(linkStyle, tileSize),
           // compact / wide 仍在网格里，砖壳要撑满格子（<button> 的 width:auto 会按
-          // 内容收缩，不补 w-full 的话长名称的砖会比旁边的窄）；classic 固定方砖，
+          // 内容收缩，不补 w-full 的话长名称的砖会比旁边的窄）；classic 砖宽固定，
           // 不能补 w-full，否则宽度被容器抢走
           linkStyle !== "classic" && "w-full min-w-0",
           "cursor-grab select-none active:cursor-grabbing",
@@ -311,7 +312,7 @@ function AddLinkTile({
       className={cn(
         linkTileClassName(linkStyle, tileSize),
         PLACEHOLDER_CLASS[linkStyle],
-        // 同上一块砖：compact / wide 撑满格子，classic 保持固定方砖
+        // 同上一块砖：compact / wide 撑满格子，classic 保持砖宽固定
         linkStyle !== "classic" && "w-full min-w-0",
         "items-center justify-center border border-dashed border-white/40 bg-transparent text-white/80 hover:bg-white/10 hover:text-white",
         isOver && "bg-white/10",

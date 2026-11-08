@@ -2,7 +2,8 @@ import type { CSSProperties } from "react";
 import { FadeIn, GlassCard } from "@/components/glass";
 import { SiteIcon } from "@/components/site-icon";
 import {
-  CLASSIC_TILE_SIZE_CLASS,
+  CLASSIC_TILE_HEIGHT_CLASS,
+  CLASSIC_TILE_WIDTH_CLASS,
   classicGridMetrics,
 } from "@/lib/grid-columns";
 import { safeHost } from "@/lib/icons";
@@ -13,9 +14,10 @@ import { cn } from "@/lib/utils";
  * 链接网格（站点设置 `linkStyle` 决定呈现形态，全站统一、访客不可切）。
  *
  * 三档形状由 `resolveLinkStyle`（lib/link-style.ts）解析，缺省 classic：
- *  - classic：图标上、名称下、域名小字；砖是固定边长的**方砖**，站点设置 `columns`
- *    （1–12）是**成块列数**：桌面按这个数成块、整块居中，窄屏放不下整块时一行
- *    自然少放几块（0/未配置回默认 8）；
+ *  - classic：图标上、名称下、域名小字；砖是定宽定高的**卡片**（宽按 `tileSize`
+ *    成块、高按同档图标盒与文字行数反推），图标盒固定占砖宽 60%；站点设置
+ *    `columns`（1–12）是**成块列数**：桌面按这个数成块、整块居中，窄屏放不下
+ *    整块时一行自然少放几块（0/未配置回默认 8）；
  *  - compact：小图标左、名称右（单行省略），透明无卡片底、不显示域名，桌面 5 列；
  *  - wide：玻璃底宽卡，图标左、右侧名称 + 域名两行，桌面 3 列 / 窄屏 1–2 列。
  *
@@ -34,20 +36,25 @@ import { cn } from "@/lib/utils";
  * 首页编辑模式（home-edit-board.tsx）复用同一套「砖的外观」：`linkTileClassName`
  * 给出三档外壳类、`LinkTileContent` 给出内层 DOM（图标 / 名称 / 域名）。正常模式
  * 仍把外壳挂在 `<a>` 上、DOM 与类名保持改动前一致；编辑模式把它挂在 `<button>` 上
- * （classic 是固定方砖、compact / wide 撑满格子；单击打开编辑弹窗，不跳转），并传
+ * （classic 是定宽定高的砖、compact / wide 撑满格子；单击打开编辑弹窗，不跳转），并传
  * `singleLine` 让名称与网址各占一行、超长截断省略号（悬停 `title` 看全称）。
  *
- * classic 的排布模型（规格已定版）：固定边长方砖（边长按站点设置 `tileSize`
- * 从 `CLASSIC_TILE_SIZE_CLASS` 取静态类）+ flex 换行 + **整块居中 + 末行左对齐**。
+ * classic 的排布模型（规格已定版）：定宽定高的砖（宽度按站点设置 `tileSize`
+ * 从 `CLASSIC_TILE_WIDTH_CLASS` 取、高度从 `CLASSIC_TILE_HEIGHT_CLASS` 取，都是静态类）
+ * + flex 换行 + **整块居中 + 末行左对齐**。
  * `columns` 是成块列数，行组的最大宽度由它与当档砖宽算出（见 lib/grid-columns.ts
  * 的 `classicGridMetrics`）；窄屏放不下整块时一行自然少放几块。砖再也不会被容器
- * 拉宽，所以列数设小时看到的是「同样的方砖、更少更松」，而不是大宽矩形。
+ * 拉宽，所以列数设小时看到的是「同样的砖、更少更松」，而不是大宽矩形。
+ *
+ * 砖高为何不与宽相等：图标盒固定占砖宽 60%，正方形装不下「图标 + 名称 + 网址」
+ * （小块只剩不到 1px 余量，文字会被 flex 压扁），所以高度单独定档，见
+ * lib/grid-columns.ts 的 `CLASSIC_TILE_HEIGHTS`。宽度仍是成块排布的唯一依据。
  */
 
 /**
  * 每档的容器类名（条目形状见下方各自的组件）。
  *
- * classic 是弹性换行容器：固定方砖、`justify-start` 让砖从左起排 —— 不满列数的
+ * classic 是弹性换行容器：固定砖、`justify-start` 让砖从左起排 —— 不满列数的
  * 末行因此落在与满行相同的列位上（上下对齐）。整块居中由 `mx-auto` + 内联
  * `max-width` 完成：满行正好填满行组宽度，`justify-start` 对满行没有影响；末行
  * 也不会为了居中而整体右移。`w-full` 给 `column-gap` 的百分比一个确定基准；间距
@@ -83,31 +90,32 @@ export function linkGridLayout(
 }
 
 /**
- * 图标盒边长（px，按链接样式分档）：同一档内所有链接共用一个定值，图标盒因此
- * 全站同档同尺寸。compact / wide 与改动前一致（36 / 20）；classic 随砖块尺寸
- * 三档变化（见 `CLASSIC_ICON_BOX`），不改图标本身的圆角与背景。
+ * classic 图标盒三档边长（px）：固定取砖宽的 60%，三档同比例（图标因此随砖等比缩放）。
+ * 141.5 × 0.6 = 84.9 → 85；113 × 0.6 = 67.8 → 68；92 × 0.6 = 55.2 → 55。
  */
-export const LINK_ICON_BOX: Record<LinkStyle, number> = {
-  classic: 44,
-  wide: 36,
-  compact: 20,
+export const CLASSIC_ICON_BOX: Record<TileSize, number> = {
+  large: 85,
+  medium: 68,
+  small: 55,
 };
 
-/** classic 图标盒三档边长（px）：large 沿用 44，medium / small 随方砖缩小。 */
-export const CLASSIC_ICON_BOX: Record<TileSize, number> = {
-  large: 44,
-  medium: 36,
-  small: 28,
+/**
+ * 图标盒边长（px，按链接样式分档）：同一档内所有链接共用一个定值，图标盒因此
+ * 全站同档同尺寸。compact / wide 与改动前一致（36 / 20）；classic 取大档的 60%
+ * 图标盒边长（逐档值见 `CLASSIC_ICON_BOX`），不改图标本身的圆角与背景。
+ */
+export const LINK_ICON_BOX: Record<LinkStyle, number> = {
+  classic: CLASSIC_ICON_BOX.large,
+  wide: 36,
+  compact: 20,
 };
 
 /**
  * classic 砖内密度（按档）：gap / 内距与名称、网址的静态字号类。
  *
- * 数值按「内容能装进方砖」反推（两行名称 + 网址）：
- * large 44+8+40+8+16+24=140 ≤ 141.5；
- * medium 36+6+32+6+16+12=108 ≤ 113；
- * small 28+4+32+4+16+4=88 ≤ 92。
- * 字号类必须是字面量（Tailwind 只扫源码字面量），不能按档动态拼。
+ * 数值与砖高（`CLASSIC_TILE_HEIGHTS`）配套：砖高按「图标盒 + 两行名称 + 一行网址」
+ * 反推，所以名称仍可折两行、字号与间距三档同口径。字号类必须是字面量（Tailwind
+ * 只扫源码字面量），不能按档动态拼。
  */
 const CLASSIC_TILE_DENSITY: Record<
   TileSize,
@@ -138,7 +146,7 @@ const CLASSIC_TILE_DENSITY: Record<
  * 两处必须同源，避免「编辑模式一进去样式就变」。
  *
  * classic 的边长与内距随站点设置 `tileSize` 变；compact / wide 排法固定，
- * 忽略第二个参数。
+ * 忽略第二个参数。classic 的宽决定成块排布，高随图标盒（砖宽 60%）定档。
  */
 export function linkTileClassName(
   linkStyle: LinkStyle,
@@ -153,7 +161,8 @@ export function linkTileClassName(
   const density = CLASSIC_TILE_DENSITY[tileSize];
   return cn(
     "glass glass-hover group flex shrink-0 flex-col items-center justify-center rounded-2xl text-center",
-    CLASSIC_TILE_SIZE_CLASS[tileSize],
+    CLASSIC_TILE_WIDTH_CLASS[tileSize],
+    CLASSIC_TILE_HEIGHT_CLASS[tileSize],
     density.gap,
     density.padding,
   );
@@ -198,7 +207,7 @@ function LinkIcon({
 /**
  * 砖的内层内容（不含外壳）：三档各自的图标尺寸、名称与域名排布。
  *
- * `singleLine`：编辑模式的砖尺寸由砖壳自己给定（classic 固定方砖、compact / wide
+ * `singleLine`：编辑模式的砖尺寸由砖壳自己给定（classic 定宽定高的砖、compact / wide
  * 撑满格子），名称与网址各占一行、超长截断省略号，并补 `title` 让悬停可看全称；
  * 普通模式的砖仍按改动前的排布（classic 名称最多两行），不传该 prop 即可。
  *

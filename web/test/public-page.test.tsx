@@ -184,7 +184,8 @@ describe("PublicPage 头部：时钟块取代顶栏", () => {
     expect(grid).not.toHaveClass("grid");
     expect(grid?.className).not.toContain("grid-cols");
     expect(screen.getByRole("link", { name: /GitHub/ })).toHaveClass(
-      "size-[141.5px]",
+      "w-[141.5px]",
+      "h-[185px]",
     );
   });
 
@@ -199,9 +200,24 @@ describe("PublicPage 头部：时钟块取代顶栏", () => {
 
   it("settings.tileSize 三档：行组与砖尺寸按档变化；缺省回 large", () => {
     const cases = [
-      { tileSize: "large" as const, px: "141.5", maxWidth: "1468px" },
-      { tileSize: "medium" as const, px: "113", maxWidth: "1240px" },
-      { tileSize: "small" as const, px: "92", maxWidth: "1072px" },
+      {
+        tileSize: "large" as const,
+        px: "141.5",
+        h: "185",
+        maxWidth: "1468px",
+      },
+      {
+        tileSize: "medium" as const,
+        px: "113",
+        h: "144",
+        maxWidth: "1240px",
+      },
+      {
+        tileSize: "small" as const,
+        px: "92",
+        h: "119",
+        maxWidth: "1072px",
+      },
     ];
 
     for (const c of cases) {
@@ -212,7 +228,7 @@ describe("PublicPage 头部：时钟块取代顶栏", () => {
       expect(link.parentElement?.parentElement).toHaveStyle({
         maxWidth: c.maxWidth,
       });
-      expect(link).toHaveClass(`size-[${c.px}px]`);
+      expect(link).toHaveClass(`w-[${c.px}px]`, `h-[${c.h}px]`);
       unmount();
     }
 
@@ -220,7 +236,8 @@ describe("PublicPage 头部：时钟块取代顶栏", () => {
     seedSite({ ...baseSettings, columns: 8 });
     render(<PublicPage onOpenAdmin={vi.fn()} />);
     expect(screen.getByRole("link", { name: /GitHub/ })).toHaveClass(
-      "size-[141.5px]",
+      "w-[141.5px]",
+      "h-[185px]",
     );
   });
 
