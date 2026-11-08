@@ -1,5 +1,6 @@
 import { FadeIn, GlassCard } from "@/components/glass";
 import { SiteIcon } from "@/components/site-icon";
+import { DEFAULT_COLUMNS, resolveColumns } from "@/lib/grid-columns";
 import { safeHost } from "@/lib/icons";
 import type { LinkStyle, SiteCategory, SiteLink } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -8,7 +9,8 @@ import { cn } from "@/lib/utils";
  * 链接网格（站点设置 `linkStyle` 决定呈现形态，全站统一、访客不可切）。
  *
  * 三档形状由 `resolveLinkStyle`（lib/link-style.ts）解析，缺省 classic：
- *  - classic：图标上、名称下、域名小字，列数沿现状（桌面 7–8 列 / 手机 4 列）；
+ *  - classic：图标上、名称下、域名小字，列数取站点设置 `columns`（桌面列数，1–12
+ *    设几是几；0/未配置用默认梯度，桌面 8 列）；
  *  - compact：小图标左、名称右（单行省略），透明无卡片底、不显示域名，桌面 5 列；
  *  - wide：玻璃底宽卡，图标左、右侧名称 + 域名两行，桌面 3 列 / 窄屏 1–2 列。
  *
@@ -31,14 +33,58 @@ import { cn } from "@/lib/utils";
  * 各占一行、超长截断省略号（悬停 `title` 看全称）。
  */
 
-/** 每档的网格列数（只有列数与间距不同，条目形状见下方各自的组件）。 */
+/**
+ * classic 档「桌面列数（站点设置 `columns`）→ 各断点列数」的全量静态阶梯。
+ *
+ * 口径（规格已定版）：`columns` 是**桌面端（xl）**列数，1–12 设几是几；桌面以下
+ * 按固定梯度递减、保证窄屏可用 —— xl 用设定值，往下一档减 1；lg/md 不低于 3、
+ * sm/base 不低于 2；同时 lg ≤10、md ≤8、sm ≤6、base ≤4；任何一档不超过上一档。
+ * 第 8 行即改动前的默认梯度（手机 4 / sm 5 / md 6 / lg 7 / xl 8），`columns`
+ * 未配置（0）时走这一行，所以不碰设置的用户看到的就是原来的排法。
+ *
+ * 必须逐行写**字面类名**：Tailwind 扫的是源码文本，`grid-cols-${n}` 这类拼接
+ * 扫不到、生成的 CSS 里没有对应类名。调整档位时整行改，不要改成模板字符串。
+ */
+const CLASSIC_GRID_BY_COLUMNS: Record<number, string> = {
+  1: "grid gap-3 grid-cols-1 sm:grid-cols-1 md:grid-cols-1 lg:grid-cols-1 xl:grid-cols-1",
+  2: "grid gap-3 grid-cols-2 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2",
+  3: "grid gap-3 grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-3",
+  4: "grid gap-3 grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4",
+  5: "grid gap-3 grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5",
+  6: "grid gap-3 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6",
+  7: "grid gap-3 grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7",
+  8: "grid gap-3 grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-7 xl:grid-cols-8",
+  9: "grid gap-3 grid-cols-4 sm:grid-cols-6 md:grid-cols-7 lg:grid-cols-8 xl:grid-cols-9",
+  10: "grid gap-3 grid-cols-4 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-9 xl:grid-cols-10",
+  11: "grid gap-3 grid-cols-4 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 xl:grid-cols-11",
+  12: "grid gap-3 grid-cols-4 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 xl:grid-cols-12",
+};
+
+/**
+ * 每档的网格列数与间距（条目形状见下方各自的组件）。classic 这里给的是默认梯度
+ * （`columns` 未配置时的那一行），实际列数走 `linkGridClassName`。
+ */
 export const LINK_GRID_CLASS: Record<LinkStyle, string> = {
-  classic:
-    "grid grid-cols-4 gap-3 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-7 xl:grid-cols-8",
+  classic: CLASSIC_GRID_BY_COLUMNS[DEFAULT_COLUMNS],
   compact:
     "grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5",
   wide: "grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3",
 };
+
+/**
+ * 网格容器类名：classic 按站点设置 `columns`（桌面列数，1–12；0/未配置用默认梯度）
+ * 出对应阶梯；compact / wide 不受 `columns` 影响，恒用各自排法。
+ *
+ * 普通模式（`LinkGrid`）与首页编辑模式（home-edit-board.tsx 的看板网格）都必须走
+ * 这里 —— 两处同源，改一处两边一起生效。
+ */
+export function linkGridClassName(
+  linkStyle: LinkStyle,
+  columns?: number | null,
+): string {
+  if (linkStyle !== "classic") return LINK_GRID_CLASS[linkStyle];
+  return CLASSIC_GRID_BY_COLUMNS[resolveColumns(columns)];
+}
 
 /**
  * 图标盒边长（px，按链接样式分档）：同一档内所有链接共用一个定值，图标盒因此
@@ -256,11 +302,14 @@ export function LinkGrid({
   links,
   linkStyle = "classic",
   showUrl = true,
+  columns,
 }: {
   links: SiteLink[];
   linkStyle?: LinkStyle;
   /** 是否渲染网址行（站点设置 `showUrl`）；缺省开 */
   showUrl?: boolean;
+  /** classic 桌面列数（站点设置 `columns`，1–12）；缺省/0 用默认梯度 */
+  columns?: number;
 }) {
   const Tile =
     linkStyle === "compact"
@@ -270,7 +319,7 @@ export function LinkGrid({
         : LinkTile;
 
   return (
-    <div className={LINK_GRID_CLASS[linkStyle]}>
+    <div className={linkGridClassName(linkStyle, columns)}>
       {links.map((link, i) => (
         <Tile key={link.id} link={link} index={i} showUrl={showUrl} />
       ))}
@@ -315,12 +364,15 @@ export function CategorySection({
   privateZone = false,
   linkStyle = "classic",
   showUrl = true,
+  columns,
 }: {
   category: SiteCategory;
   privateZone?: boolean;
   linkStyle?: LinkStyle;
   /** 是否渲染网址行（站点设置 `showUrl`）；缺省开 */
   showUrl?: boolean;
+  /** classic 桌面列数（站点设置 `columns`，1–12）；缺省/0 用默认梯度 */
+  columns?: number;
 }) {
   return (
     <section id={`cat-${category.id}`} className="scroll-mt-6">
@@ -329,6 +381,7 @@ export function CategorySection({
         links={category.links}
         linkStyle={linkStyle}
         showUrl={showUrl}
+        columns={columns}
       />
     </section>
   );

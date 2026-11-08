@@ -9,6 +9,7 @@ import { PublicDock } from "@/components/public-dock";
 import { SearchBar } from "@/components/search-bar";
 import { SiteClock } from "@/components/site-clock";
 import { WallpaperBackground } from "@/components/wallpaper-background";
+import { resolveColumns } from "@/lib/grid-columns";
 import { resolveLinkStyle } from "@/lib/link-style";
 import { resolveShowUrl } from "@/lib/show-url";
 import { useAuthenticated, useNavStore } from "@/lib/nav-store";
@@ -111,6 +112,9 @@ export function PublicPage({ onOpenAdmin }: { onOpenAdmin: () => void }) {
   const linkStyle = resolveLinkStyle(settings);
   // 是否显示网址（站点设置 showUrl，缺省开）：只影响普通模式，编辑模式恒显示
   const showUrl = resolveShowUrl(settings);
+  // classic 档的桌面列数（站点设置 columns，1–12；0/未配置 → 默认梯度 8 列）；
+  // compact / wide 不使用该值，由 linkGridClassName 忽略
+  const columns = resolveColumns(settings?.columns);
 
   // 私有标识：/api/private 的分类 DTO 不含 visibility，用「全量里有、公开列表里没有」推导私有分类。
   const publicIds = new Set(publicData?.categories.map((c) => c.id) ?? []);
@@ -198,6 +202,7 @@ export function PublicPage({ onOpenAdmin }: { onOpenAdmin: () => void }) {
           <HomeEditBoard
             categories={visibleCategories}
             linkStyle={linkStyle}
+            columns={columns}
             privateCategories={privateIds}
             onEditLink={setEditingLinkId}
             onRemoveLink={removeLinkOnHome}
@@ -212,6 +217,7 @@ export function PublicPage({ onOpenAdmin }: { onOpenAdmin: () => void }) {
                   privateZone={privateIds.has(category.id)}
                   linkStyle={linkStyle}
                   showUrl={showUrl}
+                  columns={columns}
                 />
               </FadeIn>
             ))}

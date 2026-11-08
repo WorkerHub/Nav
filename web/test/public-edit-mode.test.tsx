@@ -295,6 +295,23 @@ describe("进入 / 退出编辑模式", () => {
     expect(placeholders).toHaveLength(1);
     expect(placeholders[0].textContent).toBe("");
   });
+
+  it("列数与普通模式同源：columns=5 时编辑模式的网格也是 5 列", async () => {
+    const user = userEvent.setup();
+    const fiveColumns: SiteSettings = { ...settings, columns: 5 };
+    seed({
+      publicData: { ...publicData, settings: fiveColumns },
+      privateData: { ...privateData, settings: fiveColumns },
+    });
+    const { container } = renderPage();
+    const grid = () => container.querySelector<HTMLElement>("#cat-c-dev .grid");
+
+    expect(grid()).toHaveClass("xl:grid-cols-5");
+
+    await enterEdit(user);
+
+    expect(grid()).toHaveClass("xl:grid-cols-5");
+  });
 });
 
 describe("编辑模式：单击砖复用后台编辑弹窗", () => {
