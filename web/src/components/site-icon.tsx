@@ -5,6 +5,11 @@ import { cn } from "@/lib/utils";
 /**
  * 站点图标：手动指定的图标优先，其次是本站 `/api/icon` 解析出的 favicon，
  * 两者都失败时回退「按域名哈希着色的首字圆」（MASTER.md §1.4）。
+ *
+ * 尺寸两种给法：缺省按 `size` 画一个 `size × size` 的方框（图与首字圆一致）；
+ * `fill` 时不再自带尺寸，宽高由外层「图标盒」决定（`size-full`），图标在这个
+ * 盒子里 `object-contain` 等比缩放完整显示 —— 链接网格就是这种用法，图标盒的
+ * 大小全站同档统一，不受图标文件原始尺寸影响。
  */
 export function SiteIcon({
   title,
@@ -12,12 +17,14 @@ export function SiteIcon({
   iconUrl,
   size = 40,
   className,
+  fill = false,
 }: {
   title: string;
   url: string;
   iconUrl?: string | null;
   size?: number;
   className?: string;
+  fill?: boolean;
 }) {
   const candidates = React.useMemo(
     () => faviconCandidates(url, iconUrl),
@@ -40,12 +47,12 @@ export function SiteIcon({
       <span
         aria-hidden="true"
         className={cn(
-          "inline-flex shrink-0 select-none items-center justify-center rounded-full font-semibold text-white",
+          "inline-flex select-none items-center justify-center rounded-full font-semibold text-white",
+          fill ? "size-full" : "shrink-0",
           className,
         )}
         style={{
-          width: size,
-          height: size,
+          ...(fill ? {} : { width: size, height: size }),
           fontSize: size * 0.42,
           background: hashColor(url || title),
         }}
@@ -74,8 +81,12 @@ export function SiteIcon({
           index: (current.signature === signature ? current.index : 0) + 1,
         }));
       }}
-      className={cn("shrink-0 rounded-md object-contain", className)}
-      style={{ width: size, height: size }}
+      className={cn(
+        "rounded-md object-contain",
+        fill ? "size-full" : "shrink-0",
+        className,
+      )}
+      style={fill ? undefined : { width: size, height: size }}
     />
   );
 }
