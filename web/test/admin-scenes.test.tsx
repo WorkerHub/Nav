@@ -585,39 +585,6 @@ describe("AdminPage：后台场景胶囊（只有场景、无「全部」）", (
     );
   });
 
-  it("链接分区：只显示当前场景的分类与链接；分类选择器只列当前场景", async () => {
-    const user = userEvent.setup();
-    renderAdmin();
-
-    await user.click(screen.getByRole("tab", { name: "链接" }));
-    await user.click(screen.getByRole("radio", { name: "工作" }));
-
-    expect(screen.getByText("服务器面板")).toBeInTheDocument();
-    expect(screen.queryByText("GitHub")).toBeNull();
-
-    await user.click(screen.getByRole("combobox", { name: "选择分类" }));
-    const options = screen.getAllByRole("option").map((el) => el.textContent);
-    expect(options).toEqual(["所有", "运维"]);
-    expect(options).not.toContain("开发");
-  });
-
-  it("链接分区：当前场景没有分类时不能新建链接（先提示选分类）", async () => {
-    const user = userEvent.setup();
-    seedAdmin({
-      ...adminData,
-      categories: [workCategory],
-      links: [makeLink("l_work", "c_work", "服务器面板", 0)],
-    });
-    renderAdmin();
-
-    await user.click(screen.getByRole("tab", { name: "链接" }));
-    await user.click(screen.getByRole("radio", { name: "通用" }));
-
-    expect(screen.getByText("暂无分类，请先创建分类。")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "新建链接" }));
-    expect(toastErrorMock).toHaveBeenCalledWith("请先选择一个分类");
-  });
-
   it("「场景管理」分区可达，渲染场景面板", async () => {
     const user = userEvent.setup();
     renderAdmin();
@@ -635,8 +602,7 @@ describe("AdminPage：后台场景胶囊（只有场景、无「全部」）", (
     ).toBeNull();
   });
 
-  it("没有场景（旧后端 / 无场景概念）：不渲染胶囊，分类与链接保持现状平铺", async () => {
-    const user = userEvent.setup();
+  it("没有场景（旧后端 / 无场景概念）：不渲染胶囊，分类保持现状平铺", () => {
     seedAdmin({
       ...adminData,
       scenes: [],
@@ -650,9 +616,5 @@ describe("AdminPage：后台场景胶囊（只有场景、无「全部」）", (
     expect(screen.queryByRole("radiogroup")).toBeNull();
     expect(screen.getByText("开发")).toBeInTheDocument();
     expect(screen.getByText("运维")).toBeInTheDocument();
-
-    await user.click(screen.getByRole("tab", { name: "链接" }));
-    expect(screen.getByText("GitHub")).toBeInTheDocument();
-    expect(screen.getByText("服务器面板")).toBeInTheDocument();
   });
 });

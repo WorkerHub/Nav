@@ -21,7 +21,7 @@ import {
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { X } from "lucide-react";
+import { Plus, X } from "lucide-react";
 import { FadeIn } from "@/components/glass";
 import {
   CategoryHeading,
@@ -39,7 +39,11 @@ import type { LinkStyle, SiteCategory, SiteLink } from "@/lib/types";
  * （`rectSortingStrategy`，砖是自动换行的网格）。投放目标三种：
  *  - 某块砖：落到它的下标位置（同分类换位、跨分类插入都走这条）；
  *  - 分类标题行（`end:<catId>`）：落到该分类**末尾**；
- *  - 空分类占位（`cat:<catId>`）：虚线框、无文字、与同档砖同高，落到唯一位置。
+ *  - 空分类末尾的「+」砖（`cat:<catId>`）：与同档砖同高，落到唯一位置。
+ *
+ * 每个分类网格末尾恒有一块「+」砖（`AddLinkTile`）：点它在该分类新建链接。
+ * 分类为空时这块砖就是上面那个落点（把最后一块拖走后还能拖回来）；分类非空时
+ * 它不注册 droppable，不抢命中。
  *
  * 拖动中的预览顺序放在组件本地草稿里（只是拖拽期间的临时 UI 状态），松手才写 store：
  * `onDragOver` 做跨容器搬运，`onDragEnd` 再补同容器换位，然后把「目标分类 + 前驱 id」
@@ -60,7 +64,7 @@ import type { LinkStyle, SiteCategory, SiteLink } from "@/lib/types";
 
 /** 分类标题行投放目标（落到该分类末尾）的 id 前缀 */
 const END_PREFIX = "end:";
-/** 空分类占位投放目标的 id 前缀 */
+/** 空分类落点（也就是那块「+」砖）投放目标的 id 前缀 */
 const CAT_PREFIX = "cat:";
 
 /**
@@ -78,9 +82,9 @@ const collisionDetection: CollisionDetection = (args) => {
 };
 
 /**
- * 空分类占位的高度：与同档一块砖一致（虚线框内不写字）——实测值，砖壳撑满格子后
- * 三档分别落在 130 / 36 / 62px（classic 图标 44 + 名称与网址各一行；compact 小图标
- * 单行；wide 图标 36 一行名称 + 一行域名），占位框随之对齐。
+ * 空分类落点 / 分类末尾「+」砖的高度：与同档一块砖一致（框内只有一个加号）——
+ * 实测值，砖壳撑满格子后三档分别落在 130 / 36 / 62px（classic 图标 44 + 名称与网址
+ * 各一行；compact 小图标单行；wide 图标 36 一行名称 + 一行域名），「+」砖随之对齐。
  */
 const PLACEHOLDER_CLASS: Record<LinkStyle, string> = {
   classic: "min-h-[130px]",
@@ -257,27 +261,47 @@ function EndDropTarget({
   );
 }
 
-/** 空分类的空投放位：与砖同尺寸的虚线框，不写字。 */
-function EmptyDropZone({
-  categoryId,
+/** 空分类的落点 + 末尾新增入口：与同档砖同尺寸的虚线「+」砖。 */
+function AddLinkTile({
+  category,
   linkStyle,
+  empty,
+  onAdd,
 }: {
-  categoryId: string;
+  category: SiteCategory;
   linkStyle: LinkStyle;
+  /** 分类里还没有链接：此时它同时是该分类唯一的投放目标 */
+  empty: boolean;
+  onAdd: (categoryId: string) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({
-    id: `${CAT_PREFIX}${categoryId}`,
+    id: `${CAT_PREFIX}${category.id}`,
+    // 非空分类里不注册落点：否则会抢 `closestCorners` 的命中，把「拖到标题行
+    // 落到末尾」变成命中这块砖（标题行只有 ~30px，本来就容易被下方砖抢走）
+    disabled: !empty,
   });
   return (
-    <div
+    <button
       ref={setNodeRef}
-      aria-hidden="true"
+      type="button"
+      aria-label={`向「${category.name}」新增链接`}
+      title={`向「${category.name}」新增链接`}
+      onClick={() => onAdd(category.id)}
       className={cn(
-        "rounded-2xl border border-dashed border-white/40 transition-colors",
+        linkTileClassName(linkStyle),
         PLACEHOLDER_CLASS[linkStyle],
+        "w-full min-w-0 items-center justify-center border border-dashed border-white/40 bg-transparent text-white/80 hover:bg-white/10 hover:text-white",
         isOver && "bg-white/10",
       )}
-    />
+    >
+      <Plus
+        className={cn(
+          "shrink-0",
+          linkStyle === "compact" ? "size-4" : "size-6",
+        )}
+        aria-hidden="true"
+      />
+    </button>
   );
 }
 
@@ -289,6 +313,7 @@ export function HomeEditBoard({
   onEditLink,
   onRemoveLink,
   onMoveLink,
+  onAddLink,
 }: {
   /** 当前场景的分类（组内链接已按 sortOrder 排好，与正常模式同源） */
   categories: readonly SiteCategory[];
@@ -299,6 +324,8 @@ export function HomeEditBoard({
   privateCategories: ReadonlySet<string>;
   onEditLink: (linkId: string) => void;
   onRemoveLink: (linkId: string) => void;
+  /** 末尾「+」砖：在该分类新建链接 */
+  onAddLink: (categoryId: string) => void;
   /** 松手后保存：目标分类 + 落点前一块的 id（null = 该分类第一个位置） */
   onMoveLink: (
     linkId: string,
@@ -433,26 +460,26 @@ export function HomeEditBoard({
                 </EndDropTarget>
                 <SortableContext items={ids} strategy={rectSortingStrategy}>
                   <div className={linkGridClassName(linkStyle, columns)}>
-                    {ids.length === 0 ? (
-                      <EmptyDropZone
-                        categoryId={category.id}
-                        linkStyle={linkStyle}
-                      />
-                    ) : (
-                      ids.map((id) => {
-                        const link = linkById.get(id);
-                        if (!link) return null;
-                        return (
-                          <EditableTile
-                            key={id}
-                            link={link}
-                            linkStyle={linkStyle}
-                            onEdit={handleEdit}
-                            onRemove={onRemoveLink}
-                          />
-                        );
-                      })
-                    )}
+                    {ids.map((id) => {
+                      const link = linkById.get(id);
+                      if (!link) return null;
+                      return (
+                        <EditableTile
+                          key={id}
+                          link={link}
+                          linkStyle={linkStyle}
+                          onEdit={handleEdit}
+                          onRemove={onRemoveLink}
+                        />
+                      );
+                    })}
+                    {/* 末尾恒有一个「+」砖：空分类时它就是该分类唯一的投放目标 */}
+                    <AddLinkTile
+                      category={category}
+                      linkStyle={linkStyle}
+                      empty={ids.length === 0}
+                      onAdd={onAddLink}
+                    />
                   </div>
                 </SortableContext>
               </section>

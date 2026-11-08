@@ -23,7 +23,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { adminCreateLink, adminUpdateLink } from "@/lib/api";
+import { adminUpdateLink, type CreateLinkInput } from "@/lib/api";
 import { useNavStore } from "@/lib/nav-store";
 import type { AdminCategory, AdminLink, Visibility } from "@/lib/types";
 
@@ -36,13 +36,16 @@ import type { AdminCategory, AdminLink, Visibility } from "@/lib/types";
  *    置全局 MAX+1）；所以换分类前先 `settleLinkOrder()`，保证这次 PUT 是最后一次写；
  *  - 保存失败弹错误原文、弹窗保持打开；成功清理被替换的 R2 图标。
  *
- * `link === null` 表示新建（后台用）；首页编辑模式只用编辑态。
+ * `link === null` 是新建（首页编辑模式分类末尾的「+」砖）。新建交给调用方的
+ * `onCreateLink`：置位/排序与读回完整 DTO 是调用方的事（契约 POST 只回 `{id}`）；
+ * 两条路径成功后都走 `onSaved`，并入 store 只有一条路径。
  */
 export function LinkEditDialog({
   open,
   link,
   categories,
   defaultCategoryId,
+  onCreateLink,
   onClose,
   onSaved,
 }: {
@@ -51,10 +54,12 @@ export function LinkEditDialog({
   link: AdminLink | null;
   /** 当前场景的分类（分类下拉只列这些） */
   categories: AdminCategory[];
-  /** 新建时预选的分类（后台必须先在筛选器里选一个） */
+  /** 新建时预选的分类（首页编辑模式选中那块「+」砖所属的分类） */
   defaultCategoryId?: string;
+  /** 新建提交：落库后回传完整 DTO（排序号由调用方定，POST 只回 {id}） */
+  onCreateLink: (input: CreateLinkInput) => Promise<AdminLink>;
   onClose: () => void;
-  /** 保存成功：回传服务端返回的最新 DTO，由调用方决定就地替换还是整表刷新 */
+  /** 保存成功：回传服务端的最新 DTO，由调用方就地并入 store */
   onSaved: (link: AdminLink) => void;
 }) {
   const [form, setForm] = React.useState({
@@ -136,7 +141,7 @@ export function LinkEditDialog({
             : "链接已更新",
         );
       } else {
-        saved = await adminCreateLink(payload);
+        saved = await onCreateLink(payload);
         toast.success("链接已创建");
       }
       draft.commit();
