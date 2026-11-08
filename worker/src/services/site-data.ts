@@ -57,6 +57,8 @@ export function toSiteSettingsDto(
     linkStyle: isLinkStyle(settings.link_style)
       ? settings.link_style
       : "classic",
+    // 存量库没有该键时按默认「开」：首页卡片照旧显示网址，与改动前一致。
+    showUrl: (settings.show_url ?? "1") === "1",
   };
 }
 
