@@ -140,7 +140,7 @@ describe("AdminPage 外壳：玻璃顶栏 + 左栏菜单 + 壁纸背景 + 玻璃
     );
   });
 
-  it("分区菜单是单一 TabsList，九项齐全（含「关于」与图标）", () => {
+  it("分区菜单是单一 TabsList，八项齐全（含「关于」与图标，链接不在后台管）", () => {
     seedAdmin();
     renderAdmin();
 
@@ -149,7 +149,6 @@ describe("AdminPage 外壳：玻璃顶栏 + 左栏菜单 + 壁纸背景 + 玻璃
     const tabs = within(tablist[0]).getAllByRole("tab");
     expect(tabs.map((t) => t.textContent)).toEqual([
       "分类",
-      "链接",
       "场景管理",
       "搜索引擎",
       "站点设置",
@@ -158,6 +157,8 @@ describe("AdminPage 外壳：玻璃顶栏 + 左栏菜单 + 壁纸背景 + 玻璃
       "系统管理",
       "关于",
     ]);
+    // 首页编辑模式接管链接的增删改与拖动，后台不再有「链接」入口
+    expect(screen.queryByRole("tab", { name: "链接" })).toBeNull();
     for (const tab of tabs) {
       expect(tab.querySelector("svg")).not.toBeNull();
     }
@@ -252,7 +253,7 @@ describe("AdminPage 外壳：玻璃顶栏 + 左栏菜单 + 壁纸背景 + 玻璃
       first.focus();
       await user.keyboard("{ArrowDown}");
 
-      expect(screen.getByRole("tab", { name: "链接" })).toHaveAttribute(
+      expect(screen.getByRole("tab", { name: "场景管理" })).toHaveAttribute(
         "aria-selected",
         "true",
       );

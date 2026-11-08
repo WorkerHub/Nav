@@ -4,7 +4,6 @@ import {
   FolderTree,
   Info,
   Layers,
-  Link as LinkIcon,
   LogOut,
   Search,
   Settings as SettingsIcon,
@@ -13,7 +12,7 @@ import {
 } from "lucide-react";
 import * as React from "react";
 import { AboutPanel } from "@/components/admin/about-panel";
-import { CategoryPanel, LinkPanel } from "@/components/admin/crud-panels";
+import { CategoryPanel } from "@/components/admin/crud-panels";
 import { ScenePanel } from "@/components/admin/scene-panel";
 import { SecurityPanel } from "@/components/admin/security-panel";
 import {
@@ -41,8 +40,9 @@ import type { AdminScene } from "@/lib/types";
  * + 玻璃内容卡。分区菜单用 Radix Tabs 单一根：宽屏是左栏竖排，窄屏变内容区顶部的
  * 横向滚动菜单条（同一个 TabsList，只换 orientation 与响应式类，不做抽屉）。
  *
- * 分区内容（分类 / 链接 / 场景管理 / 搜索引擎 / 站点设置 / 导入导出 /
+ * 分区内容（分类 / 场景管理 / 搜索引擎 / 站点设置 / 导入导出 /
  * 安全·两步验证 / 系统管理 / 关于）的容器换成了玻璃卡，面板组件本身的表单与业务逻辑不动。
+ * 链接不在这里管：首页编辑模式（`home-edit-board.tsx`）已能增删改与拖动排序。
  *
  * 后台数据由 store（useNavStore.adminData）承载，本页只负责加载与分发；
  * 安全区的数据（2FA 状态、Passkey 凭据）属会话期敏感数据，由 SecurityPanel 自行拉取，
@@ -52,7 +52,6 @@ import type { AdminScene } from "@/lib/types";
 /** 左栏菜单项（图标用 Lucide，与前台同一视觉家族）。 */
 const ADMIN_TABS = [
   { value: "categories", label: "分类", icon: FolderTree },
-  { value: "links", label: "链接", icon: LinkIcon },
   { value: "scenes", label: "场景管理", icon: Layers },
   { value: "engines", label: "搜索引擎", icon: Search },
   { value: "settings", label: "站点设置", icon: SettingsIcon },
@@ -94,8 +93,8 @@ function PanelCard({ children }: { children: React.ReactNode }) {
 }
 
 /**
- * 后台场景胶囊：「分类」「链接」两分区内容卡顶部，只有场景、没有「全部」
- * （后台永远停在具体场景：新建分类/链接要带 sceneId）。与前台共用 `nav.scene`。
+ * 后台场景胶囊：「分类」分区内容卡顶部，只有场景、没有「全部」
+ * （后台永远停在具体场景：新建分类要带 sceneId）。与前台共用 `nav.scene`。
  * 没有场景（旧后端 / 无场景概念）时不渲染。
  */
 function AdminSceneBar({
@@ -242,19 +241,6 @@ export function AdminPage({ onBack }: { onBack: () => void }) {
                       categories={sceneCategories}
                       sceneId={activeScene}
                       sceneVisibility={activeSceneVisibility}
-                      onChanged={() => void loadAdmin()}
-                    />
-                  </div>
-                </PanelCard>
-              </TabsContent>
-
-              <TabsContent value="links">
-                <PanelCard>
-                  <div className="flex flex-col gap-5">
-                    <AdminSceneBar scenes={scenes} sceneId={activeScene} />
-                    <LinkPanel
-                      categories={sceneCategories}
-                      links={links}
                       onChanged={() => void loadAdmin()}
                     />
                   </div>

@@ -11,7 +11,12 @@ import type { UserEvent } from "@testing-library/user-event";
 import { toast } from "sonner";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PublicPage } from "@/components/public-page";
-import { adminListAll, type AdminData } from "@/lib/api";
+import {
+  adminCreateLink,
+  adminListAll,
+  adminListLinks,
+  type AdminData,
+} from "@/lib/api";
 import {
   resetAdminOrderState,
   resetHomeEditState,
@@ -51,10 +56,14 @@ vi.mock("@/lib/api", async (importOriginal) => {
   return {
     ...actual,
     adminListAll: vi.fn(),
+    adminCreateLink: vi.fn(),
+    adminListLinks: vi.fn(),
   };
 });
 
 const listAllMock = vi.mocked(adminListAll);
+const createLinkMock = vi.mocked(adminCreateLink);
+const listLinksMock = vi.mocked(adminListLinks);
 const toastMock = vi.mocked(toast);
 const toastErrorMock = vi.mocked(toast.error);
 
@@ -206,6 +215,8 @@ beforeEach(() => {
   resetAdminOrderState();
   resetHomeEditState();
   listAllMock.mockReset();
+  createLinkMock.mockReset();
+  listLinksMock.mockReset();
   toastMock.mockClear();
   toastErrorMock.mockClear();
   useScenePreferenceStore.setState({ raw: "s_default" });
@@ -286,14 +297,20 @@ describe("进入 / 退出编辑模式", () => {
     expect(useNavStore.getState().editMode).toBe(false);
   });
 
-  it("空分类在编辑模式渲染无文字的空投放位（虚线框）", async () => {
+  it("每个分类网格末尾都有「+」砖，空分类那块兼作落点（不再是空白虚线框）", async () => {
     const user = userEvent.setup();
     const { container } = renderPage();
     await enterEdit(user);
 
-    const placeholders = container.querySelectorAll(".border-dashed");
-    expect(placeholders).toHaveLength(1);
-    expect(placeholders[0].textContent).toBe("");
+    // 默认场景只有「开发」「空」两个分类
+    expect(
+      screen.getByRole("button", { name: "向「开发」新增链接" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "向「空」新增链接" }),
+    ).toBeInTheDocument();
+    // 虚线砖就是这两块「+」砖：没有额外的无文字占位
+    expect(container.querySelectorAll(".border-dashed")).toHaveLength(2);
   });
 });
 
@@ -314,6 +331,87 @@ describe("编辑模式：单击砖复用后台编辑弹窗", () => {
     expect(within(dialog).getByLabelText("选择所属分类")).toHaveTextContent(
       "开发",
     );
+  });
+});
+
+describe("编辑模式：分类末尾「+」砖新建链接", () => {
+  it("新建弹窗打开时 Esc 只关弹窗，不退出编辑模式", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await enterEdit(user);
+
+    await user.click(
+      screen.getByRole("button", { name: "向「开发」新增链接" }),
+    );
+    const dialog = await screen.findByRole("dialog");
+
+    // 真实浏览器里 Esc 发在弹窗内的焦点元素上（冒泡到 window 时弹窗已被 Radix 关掉）
+    fireEvent.keyDown(within(dialog).getByLabelText("选择所属分类"), {
+      key: "Escape",
+    });
+
+    expect(useNavStore.getState().editMode).toBe(true);
+  });
+
+  it("没有弹窗时 Esc 仍正常退出编辑模式", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await enterEdit(user);
+
+    fireEvent.keyDown(window, { key: "Escape" });
+
+    expect(useNavStore.getState().editMode).toBe(false);
+  });
+
+  it("点「+」打开「新建链接」且分类已预选；保存后新砖出现在该分类末尾", async () => {
+    const user = userEvent.setup();
+    createLinkMock.mockResolvedValue({ id: "l9" });
+    listLinksMock.mockResolvedValue([
+      ...makeAdminData().links,
+      {
+        ...adminLink({
+          id: "l9",
+          categoryId: "c-empty",
+          title: "新链接",
+          url: "https://example.com/new",
+          iconUrl: null,
+          description: null,
+          sortOrder: 3,
+        }),
+      },
+    ]);
+    renderPage();
+    await enterEdit(user);
+
+    await user.click(screen.getByRole("button", { name: "向「空」新增链接" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("新建链接")).toBeInTheDocument();
+    expect(within(dialog).getByLabelText("选择所属分类")).toHaveTextContent(
+      "空",
+    );
+
+    await user.type(within(dialog).getByLabelText("标题"), "新链接");
+    await user.type(
+      within(dialog).getByLabelText("URL"),
+      "https://example.com/new",
+    );
+    await user.click(within(dialog).getByRole("button", { name: "保存" }));
+
+    await waitFor(() => expect(createLinkMock).toHaveBeenCalledTimes(1));
+    // 契约省略 sortOrder 会兜底 0（插到分类最前）：新建一律显式送全局 MAX+1
+    expect(createLinkMock.mock.calls[0][0]).toMatchObject({
+      categoryId: "c-empty",
+      title: "新链接",
+      url: "https://example.com/new",
+      sortOrder: 3,
+    });
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "新链接" }),
+      ).toBeInTheDocument(),
+    );
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 });
 
