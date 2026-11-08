@@ -15,6 +15,11 @@ import { cn } from "@/lib/utils";
  * 每一条都包一层 `FadeIn`（错峰入场，与改动前一致）；外链属性
  * `target="_blank" rel="noopener noreferrer"` 三档一致。
  *
+ * 图标一律放进固定边长的「图标盒」（`LinkIcon` + `LINK_ICON_BOX`）：盒子的宽高
+ * 只由档位决定、与图标文件自身的尺寸无关，图标在盒内等比缩放完整显示
+ * （`object-contain`）—— 所以同一行的图标外接尺寸一致，不拉伸、不裁切。
+ * 圆角（`rounded-md`）与透明底仍是图标元素自己的样式，没有额外底色或描边。
+ *
  * 「显示网址」开关（站点设置 `showUrl`，缺省开）只作用于普通模式：关闭后 classic 与
  * wide 两档不再渲染网址行（compact 本就没有网址行）。首页编辑模式不传 `showUrl`，
  * 走默认 `true` —— 编辑场景要核对地址，恒显示网址。
@@ -36,6 +41,17 @@ export const LINK_GRID_CLASS: Record<LinkStyle, string> = {
 };
 
 /**
+ * 图标盒边长（px，按链接样式分档）：同一档内所有链接共用一个定值，图标盒因此
+ * 全站同档同尺寸。三档的数值与改动前的图标尺寸一致（classic 44 / wide 36 /
+ * compact 20），换档只换盒子大小、不改图标本身的圆角与背景。
+ */
+export const LINK_ICON_BOX: Record<LinkStyle, number> = {
+  classic: 44,
+  wide: 36,
+  compact: 20,
+};
+
+/**
  * 一块链接砖的外壳类（三档形状）。正常模式挂在 `<a>`、编辑模式挂在 div 上，
  * 两处必须同源，避免「编辑模式一进去样式就变」。
  */
@@ -47,6 +63,36 @@ export function linkTileClassName(linkStyle: LinkStyle): string {
     return "glass glass-hover flex h-full items-center gap-3 rounded-2xl px-4 py-3 text-start";
   }
   return "glass glass-hover group flex h-full flex-col items-center gap-2 rounded-2xl px-2 py-4 text-center";
+}
+
+/**
+ * 图标盒：固定边长的方块 + 居中，图标用 `fill` 填满盒子（等比完整显示由
+ * `SiteIcon` 的 `object-contain` 负责）。盒子尺寸只来自 `LINK_ICON_BOX`，
+ * 不受图标文件原始尺寸影响，因此不会因为图标大小不同把同一行撑得参差。
+ */
+function LinkIcon({
+  link,
+  linkStyle,
+}: {
+  link: SiteLink;
+  linkStyle: LinkStyle;
+}) {
+  const size = LINK_ICON_BOX[linkStyle];
+  return (
+    <span
+      data-icon-box={linkStyle}
+      className="inline-flex shrink-0 items-center justify-center"
+      style={{ width: size, height: size }}
+    >
+      <SiteIcon
+        title={link.title}
+        url={link.url}
+        iconUrl={link.iconUrl}
+        size={size}
+        fill
+      />
+    </span>
+  );
 }
 
 /**
@@ -79,12 +125,7 @@ export function LinkTileContent({
   if (linkStyle === "compact") {
     return (
       <>
-        <SiteIcon
-          title={link.title}
-          url={link.url}
-          iconUrl={link.iconUrl}
-          size={20}
-        />
+        <LinkIcon link={link} linkStyle="compact" />
         <span title={titleAttr} className="min-w-0 flex-1 truncate text-sm">
           {link.title}
         </span>
@@ -94,12 +135,7 @@ export function LinkTileContent({
   if (linkStyle === "wide") {
     return (
       <>
-        <SiteIcon
-          title={link.title}
-          url={link.url}
-          iconUrl={link.iconUrl}
-          size={36}
-        />
+        <LinkIcon link={link} linkStyle="wide" />
         <span className="min-w-0 flex-1">
           <span
             title={titleAttr}
@@ -121,12 +157,7 @@ export function LinkTileContent({
   }
   return (
     <>
-      <SiteIcon
-        title={link.title}
-        url={link.url}
-        iconUrl={link.iconUrl}
-        size={44}
-      />
+      <LinkIcon link={link} linkStyle="classic" />
       <span
         title={titleAttr}
         className={cn(
