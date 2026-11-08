@@ -219,6 +219,40 @@ export async function insertLink(
     .run();
 }
 
+/**
+ * Moves one link to another category **and** rewrites the global sort order in a
+ * single D1 transaction (nav #28: cross-category drag is one atomic save). The
+ * category write and every `sort_order` write are in the same `db.batch`, so a
+ * failure leaves neither half behind — no "group changed, order did not" state.
+ *
+ * Position comes from the index in `ids` (the client's rebuilt global order),
+ * **not** from the append-at-the-end rule of `PUT /api/admin/links/:id`. Ids not
+ * present in the table are ignored, same as `POST /api/admin/links/reorder`.
+ */
+export async function moveLinkWithOrder(
+  db: D1Database,
+  prefix: string,
+  linkId: string,
+  categoryId: string,
+  ids: string[],
+): Promise<void> {
+  const now = nowIso();
+  await db.batch([
+    db
+      .prepare(
+        `UPDATE ${prefix}links SET category_id = ?, updated_at = ? WHERE id = ?`,
+      )
+      .bind(categoryId, now, linkId),
+    ...ids.map((id, index) =>
+      db
+        .prepare(
+          `UPDATE ${prefix}links SET sort_order = ?, updated_at = ? WHERE id = ?`,
+        )
+        .bind(index, now, id),
+    ),
+  ]);
+}
+
 export async function updateLink(
   db: D1Database,
   prefix: string,

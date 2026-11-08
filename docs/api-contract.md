@@ -200,6 +200,13 @@ Passkey（WebAuthn，/api/auth/passkey/*，@simplewebauthn/server v14）：
   - 搬分类时若同时给了 `sortOrder` 则以它为准；未给 `sortOrder` 时落到目标分类末尾（全表 `MAX(sort_order)+1`，与分类跨场景搬家同一口径），不会与现有排序撞号；`categoryId` 传的是原分类（未变）时不动顺序。
 - `DELETE /api/admin/links/:id` → `{success:true}`
 - `POST /api/admin/links/reorder` body `{ids:[…]}` → `{success:true}`
+- `POST /api/admin/links/move` body `{linkId, categoryId, ids}` → `{success:true}`（跨分类拖动的原子保存，nav #28 冻结）
+  - 语义：在**同一个 `db.batch` 事务**里把 `linkId` 的 `category_id` 改成 `categoryId`，并把 `ids` 的**下标**写成各自的 `sort_order`。两者一起生效或一起回滚，不存在「分组已改、顺序没跟上」而接口返回成功的中间态；整批失败时一行都没写。
+  - `ids` 是客户端重建后的**全局**链接顺序（链接 `sort_order` 是跨分类、跨场景的一条全局序列）。落点 = `linkId` 在 `ids` 里的下标，**不是**目标分类末尾——这是它与 `PUT /api/admin/links/:id` 追加规则的差别：**跨分类拖动只走本端点**，不要再「先 PUT 改 categoryId 再补一次 reorder」。
+  - `ids` 只触碰其中出现的行（库中不存在的 id 静默忽略，与 `/links/reorder` 同口径）；客户端应提交它当前可见的**全部**链接 id，否则未提交的行保留旧 `sort_order`，可能与新序号撞号。`ids` 里 `linkId` 必须恰好出现一次。
+  - `categoryId` 可与 `linkId` 当前分类相同（等价纯排序），不报错。
+  - 校验与错误按此顺序：`linkId` 非空字符串，否则 400 `{"error":"linkId is required"}`；`ids` 必须是字符串数组，否则 400 `{"error":"ids must be an array of link ids"}`；`ids` 里 `linkId` 出现 0 次或多次 → 400 `{"error":"ids must contain linkId exactly once"}`；`linkId` 不存在 → 404 `{"error":"not found"}`；`categoryId` 查不到（含缺失/非字符串，与 `PUT /links/:id` 同口径先 `String()` 再查库）→ 400 `{"error":"categoryId does not exist"}`；写库整批失败 → 500 `{"error":"move failed"}` 且无任何写入。未登录 → 401 `{"error":"unauthorized"}`（与其他 `/api/admin/*` 同口径）。
+  - 成功响应只回 `{success:true}`（不回整条链接）：成功以客户端乐观状态为准、不整表重拉，`sortOrder` 即它提交的下标。
 
 ### 搜索引擎
 
