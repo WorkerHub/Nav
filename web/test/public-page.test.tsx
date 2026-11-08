@@ -147,7 +147,10 @@ describe("PublicPage 头部：时钟块取代顶栏", () => {
     const link = screen.getByRole("link", { name: /GitHub/ });
     expect(link).not.toHaveClass("glass");
     expect(link).not.toHaveTextContent("github.com");
-    expect(link.parentElement?.parentElement).toHaveClass("lg:grid-cols-5");
+    expect(link.parentElement?.parentElement).toHaveClass(
+      "grid-cols-[repeat(auto-fill,240px)]",
+      "justify-center",
+    );
   });
 
   it("settings.linkStyle=wide：宽卡片（玻璃底 + 名称与域名两行）", () => {
@@ -246,7 +249,7 @@ describe("PublicPage 头部：时钟块取代顶栏", () => {
     const compact = render(<PublicPage onOpenAdmin={vi.fn()} />);
     expect(
       screen.getByRole("link", { name: /GitHub/ }).parentElement?.parentElement,
-    ).toHaveClass("lg:grid-cols-5");
+    ).toHaveClass("grid-cols-[repeat(auto-fill,240px)]");
     compact.unmount();
 
     seedSite({ ...baseSettings, columns: 12, linkStyle: "wide" });

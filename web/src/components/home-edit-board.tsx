@@ -88,12 +88,12 @@ const collisionDetection: CollisionDetection = (args) => {
 };
 
 /**
- * compact / wide 的「+」砖高度（框内只有一个图标）：与同档一块砖一致 ——
- * compact 图标 20 单行、wide 图标 36 + 一行名称 + 一行域名。classic 不列在这里：
- * 它直接拿砖壳的定宽定高类（`w-[…] h-[…]`），无须估算高度。
+ * compact / wide 的「+」砖高度。wide 要估：图标 36 + 一行名称 + 一行域名，固定
+ * `min-h-[62px]`。compact 不列在这里：它的「+」砖高度由 24px 图标 + 砖壳内距
+ * 自然决定（与普通砖同尺寸），不必再估。classic 也不列：它直接拿砖壳的定宽定高
+ * 类（`w-[…] h-[…]`）。
  */
 const PLACEHOLDER_CLASS: Partial<Record<LinkStyle, string>> = {
-  compact: "min-h-9",
   wide: "min-h-[62px]",
 };
 
@@ -314,17 +314,11 @@ function AddLinkTile({
         PLACEHOLDER_CLASS[linkStyle],
         // 同上一块砖：compact / wide 撑满格子，classic 保持砖宽固定
         linkStyle !== "classic" && "w-full min-w-0",
-        "items-center justify-center border border-dashed border-white/40 bg-transparent text-white/80 hover:bg-white/10 hover:text-white",
+        "items-center justify-center border border-dashed border-white/40 bg-transparent text-white/80 hover:bg-white/5 hover:text-white",
         isOver && "bg-white/10",
       )}
     >
-      <Plus
-        className={cn(
-          "shrink-0",
-          linkStyle === "compact" ? "size-4" : "size-6",
-        )}
-        aria-hidden="true"
-      />
+      <Plus className="size-6 shrink-0" aria-hidden="true" />
     </button>
   );
 }
