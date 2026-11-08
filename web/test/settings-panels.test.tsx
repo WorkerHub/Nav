@@ -381,7 +381,7 @@ describe("SettingsPanel：站点主题已删除", () => {
   });
 });
 
-describe("SettingsPanel：列数字段只在 classic 下显示", () => {
+describe("SettingsPanel：每行上限字段只在 classic 下显示", () => {
   beforeEach(() => {
     uploadMock.mockReset();
     updateSettingsMock.mockReset();
@@ -391,10 +391,13 @@ describe("SettingsPanel：列数字段只在 classic 下显示", () => {
     }));
   });
 
-  it("classic（缺省）：显示「列数（1–12）」并回显已有值", () => {
+  it("classic（缺省）：显示「每行卡片上限（1–12）」并回显已有值，附方砖说明", () => {
     render(<SettingsPanel settings={baseSettings} onChanged={vi.fn()} />);
 
-    expect(screen.getByLabelText("列数（1–12）")).toHaveValue(6);
+    expect(screen.getByLabelText("每行卡片上限（1–12）")).toHaveValue(6);
+    expect(
+      screen.getByText("卡片是固定方砖，屏幕变窄时一行会少于这个数。"),
+    ).toBeInTheDocument();
   });
 
   it("linkStyle=compact / wide：字段整块隐藏、不留说明文字", () => {
@@ -406,8 +409,8 @@ describe("SettingsPanel：列数字段只在 classic 下显示", () => {
         />,
       );
 
-      expect(screen.queryByLabelText("列数（1–12）")).toBeNull();
-      expect(screen.queryByText("列数（1–12）")).toBeNull();
+      expect(screen.queryByLabelText("每行卡片上限（1–12）")).toBeNull();
+      expect(screen.queryByText("每行卡片上限（1–12）")).toBeNull();
       unmount();
     }
   });
@@ -420,7 +423,7 @@ describe("SettingsPanel：列数字段只在 classic 下显示", () => {
     await user.click(
       screen.getByRole("option", { name: "紧凑（横排单行，无卡片底）" }),
     );
-    expect(screen.queryByLabelText("列数（1–12）")).toBeNull();
+    expect(screen.queryByLabelText("每行卡片上限（1–12）")).toBeNull();
 
     await user.click(screen.getByRole("button", { name: "保存设置" }));
     await waitFor(() => expect(updateSettingsMock).toHaveBeenCalledTimes(1));
@@ -434,6 +437,6 @@ describe("SettingsPanel：列数字段只在 classic 下显示", () => {
     await user.click(
       screen.getByRole("option", { name: "经典（图标上、名称下）" }),
     );
-    expect(screen.getByLabelText("列数（1–12）")).toHaveValue(6);
+    expect(screen.getByLabelText("每行卡片上限（1–12）")).toHaveValue(6);
   });
 });

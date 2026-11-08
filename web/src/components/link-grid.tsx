@@ -1,6 +1,7 @@
+import type { CSSProperties } from "react";
 import { FadeIn, GlassCard } from "@/components/glass";
 import { SiteIcon } from "@/components/site-icon";
-import { DEFAULT_COLUMNS, resolveColumns } from "@/lib/grid-columns";
+import { classicGridMetrics } from "@/lib/grid-columns";
 import { safeHost } from "@/lib/icons";
 import type { LinkStyle, SiteCategory, SiteLink } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -9,8 +10,8 @@ import { cn } from "@/lib/utils";
  * 链接网格（站点设置 `linkStyle` 决定呈现形态，全站统一、访客不可切）。
  *
  * 三档形状由 `resolveLinkStyle`（lib/link-style.ts）解析，缺省 classic：
- *  - classic：图标上、名称下、域名小字，列数取站点设置 `columns`（桌面列数，1–12
- *    设几是几；0/未配置用默认梯度，桌面 8 列）；
+ *  - classic：图标上、名称下、域名小字；砖是固定边长的**方砖**，站点设置 `columns`
+ *    （1–12）只是**每行上限**，实际放几块由容器宽度与砖间距决定（0/未配置回默认 8）；
  *  - compact：小图标左、名称右（单行省略），透明无卡片底、不显示域名，桌面 5 列；
  *  - wide：玻璃底宽卡，图标左、右侧名称 + 域名两行，桌面 3 列 / 窄屏 1–2 列。
  *
@@ -28,62 +29,50 @@ import { cn } from "@/lib/utils";
  *
  * 首页编辑模式（home-edit-board.tsx）复用同一套「砖的外观」：`linkTileClassName`
  * 给出三档外壳类、`LinkTileContent` 给出内层 DOM（图标 / 名称 / 域名）。正常模式
- * 仍把外壳挂在 `<a>` 上、DOM 与类名保持改动前一致；编辑模式把它挂在一个撑满网格
- * 格子的 `<button>` 上（单击打开编辑弹窗，不跳转），并传 `singleLine` 让名称与网址
- * 各占一行、超长截断省略号（悬停 `title` 看全称）。
+ * 仍把外壳挂在 `<a>` 上、DOM 与类名保持改动前一致；编辑模式把它挂在 `<button>` 上
+ * （classic 是固定方砖、compact / wide 撑满格子；单击打开编辑弹窗，不跳转），并传
+ * `singleLine` 让名称与网址各占一行、超长截断省略号（悬停 `title` 看全称）。
+ *
+ * classic 的排布模型（规格已定版）：固定边长方砖（`linkTileClassName` 里的
+ * `size-[141.5px]`）+ flex 换行 + 逐行居中。`columns` 只是每行上限，宽度与间距
+ * 决定实际块数（见 lib/grid-columns.ts 的 `classicGridMetrics`）。砖再也不会被
+ * 容器拉宽，所以列数设小时看到的是「同样的方砖、更少更松」，而不是大宽矩形。
  */
 
 /**
- * classic 档「桌面列数（站点设置 `columns`）→ 各断点列数」的全量静态阶梯。
+ * 每档的容器类名（条目形状见下方各自的组件）。
  *
- * 口径（规格已定版）：`columns` 是**桌面端（xl）**列数，1–12 设几是几；桌面以下
- * 按固定梯度递减、保证窄屏可用 —— xl 用设定值，往下一档减 1；lg/md 不低于 3、
- * sm/base 不低于 2；同时 lg ≤10、md ≤8、sm ≤6、base ≤4；任何一档不超过上一档。
- * 第 8 行即改动前的默认梯度（手机 4 / sm 5 / md 6 / lg 7 / xl 8），`columns`
- * 未配置（0）时走这一行，所以不碰设置的用户看到的就是原来的排法。
- *
- * 必须逐行写**字面类名**：Tailwind 扫的是源码文本，`grid-cols-${n}` 这类拼接
- * 扫不到、生成的 CSS 里没有对应类名。调整档位时整行改，不要改成模板字符串。
- */
-const CLASSIC_GRID_BY_COLUMNS: Record<number, string> = {
-  1: "grid gap-3 grid-cols-1 sm:grid-cols-1 md:grid-cols-1 lg:grid-cols-1 xl:grid-cols-1",
-  2: "grid gap-3 grid-cols-2 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2",
-  3: "grid gap-3 grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-3",
-  4: "grid gap-3 grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4",
-  5: "grid gap-3 grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5",
-  6: "grid gap-3 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6",
-  7: "grid gap-3 grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7",
-  8: "grid gap-3 grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-7 xl:grid-cols-8",
-  9: "grid gap-3 grid-cols-4 sm:grid-cols-6 md:grid-cols-7 lg:grid-cols-8 xl:grid-cols-9",
-  10: "grid gap-3 grid-cols-4 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-9 xl:grid-cols-10",
-  11: "grid gap-3 grid-cols-4 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 xl:grid-cols-11",
-  12: "grid gap-3 grid-cols-4 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 xl:grid-cols-12",
-};
-
-/**
- * 每档的网格列数与间距（条目形状见下方各自的组件）。classic 这里给的是默认梯度
- * （`columns` 未配置时的那一行），实际列数走 `linkGridClassName`。
+ * classic 是弹性换行容器：固定方砖、`justify-center` 让每一行（含不满的最后一行）
+ * 整段居中；`w-full` 给 `column-gap` 的百分比一个确定基准，再由 `mx-auto` +
+ * 内联 `max-width` 把行组整体居中（多余宽度对称留在两侧）。间距与上限来自
+ * `linkGridLayout`（lib/grid-columns.ts 的 `classicGridMetrics`）。
  */
 export const LINK_GRID_CLASS: Record<LinkStyle, string> = {
-  classic: CLASSIC_GRID_BY_COLUMNS[DEFAULT_COLUMNS],
+  classic: "mx-auto flex w-full flex-wrap content-start justify-center gap-y-3",
   compact:
     "grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5",
   wide: "grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3",
 };
 
 /**
- * 网格容器类名：classic 按站点设置 `columns`（桌面列数，1–12；0/未配置用默认梯度）
- * 出对应阶梯；compact / wide 不受 `columns` 影响，恒用各自排法。
+ * 网格容器的完整排布：classic 额外带内联 `maxWidth` / `columnGap`（每行上限与
+ * 间距都随站点设置变，类名拼不出来），compact / wide 只有类名。
  *
  * 普通模式（`LinkGrid`）与首页编辑模式（home-edit-board.tsx 的看板网格）都必须走
  * 这里 —— 两处同源，改一处两边一起生效。
  */
-export function linkGridClassName(
+export function linkGridLayout(
   linkStyle: LinkStyle,
   columns?: number | null,
-): string {
-  if (linkStyle !== "classic") return LINK_GRID_CLASS[linkStyle];
-  return CLASSIC_GRID_BY_COLUMNS[resolveColumns(columns)];
+): { className: string; style?: CSSProperties } {
+  if (linkStyle !== "classic") {
+    return { className: LINK_GRID_CLASS[linkStyle] };
+  }
+  const { maxWidth, columnGap } = classicGridMetrics(columns);
+  return {
+    className: LINK_GRID_CLASS.classic,
+    style: { maxWidth, columnGap },
+  };
 }
 
 /**
@@ -108,7 +97,9 @@ export function linkTileClassName(linkStyle: LinkStyle): string {
   if (linkStyle === "wide") {
     return "glass glass-hover flex h-full items-center gap-3 rounded-2xl px-4 py-3 text-start";
   }
-  return "glass glass-hover group flex h-full flex-col items-center gap-2 rounded-2xl px-2 py-4 text-center";
+  // 固定方砖（141.5×141.5）：高度按「图标 44 + 名称两行 40 + 网址 16 + 两处 8 间距
+  // + 上下各 12 内距 = 140」压到 py-3，两行名称也装得下；内容再多就靠单行/两行截断。
+  return "glass glass-hover group flex size-[141.5px] shrink-0 flex-col items-center justify-center gap-2 rounded-2xl px-2 py-3 text-center";
 }
 
 /**
@@ -144,9 +135,9 @@ function LinkIcon({
 /**
  * 砖的内层内容（不含外壳）：三档各自的图标尺寸、名称与域名排布。
  *
- * `singleLine`：编辑模式的砖宽高由网格给定（home-edit-board.tsx 把外壳撑满格子），
- * 名称与网址各占一行、超长截断省略号，并补 `title` 让悬停可看全称；普通模式的砖
- * 仍按改动前的排布（classic 名称最多两行），不传该 prop 即可。
+ * `singleLine`：编辑模式的砖尺寸由砖壳自己给定（classic 固定方砖、compact / wide
+ * 撑满格子），名称与网址各占一行、超长截断省略号，并补 `title` 让悬停可看全称；
+ * 普通模式的砖仍按改动前的排布（classic 名称最多两行），不传该 prop 即可。
  *
  * `showUrl`：普通模式的「显示网址」开关（站点设置 `showUrl`）；编辑模式不传，恒显示。
  */
@@ -236,7 +227,7 @@ function LinkTile({
   showUrl: boolean;
 }) {
   return (
-    <FadeIn delay={Math.min(index * 0.02, 0.3)}>
+    <FadeIn delay={Math.min(index * 0.02, 0.3)} className="shrink-0">
       <a
         href={link.url}
         target="_blank"
@@ -308,7 +299,7 @@ export function LinkGrid({
   linkStyle?: LinkStyle;
   /** 是否渲染网址行（站点设置 `showUrl`）；缺省开 */
   showUrl?: boolean;
-  /** classic 桌面列数（站点设置 `columns`，1–12）；缺省/0 用默认梯度 */
+  /** classic 每行上限（站点设置 `columns`，1–12）；缺省/0 回默认值 */
   columns?: number;
 }) {
   const Tile =
@@ -317,9 +308,10 @@ export function LinkGrid({
       : linkStyle === "wide"
         ? WideLinkTile
         : LinkTile;
+  const { className, style } = linkGridLayout(linkStyle, columns);
 
   return (
-    <div className={linkGridClassName(linkStyle, columns)}>
+    <div className={className} style={style} data-link-grid={linkStyle}>
       {links.map((link, i) => (
         <Tile key={link.id} link={link} index={i} showUrl={showUrl} />
       ))}
@@ -371,7 +363,7 @@ export function CategorySection({
   linkStyle?: LinkStyle;
   /** 是否渲染网址行（站点设置 `showUrl`）；缺省开 */
   showUrl?: boolean;
-  /** classic 桌面列数（站点设置 `columns`，1–12）；缺省/0 用默认梯度 */
+  /** classic 每行上限（站点设置 `columns`，1–12）；缺省/0 回默认值 */
   columns?: number;
 }) {
   return (

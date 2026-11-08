@@ -313,7 +313,7 @@ describe("进入 / 退出编辑模式", () => {
     expect(container.querySelectorAll(".border-dashed")).toHaveLength(2);
   });
 
-  it("列数与普通模式同源：columns=5 时编辑模式的网格也是 5 列", async () => {
+  it("排布与普通模式同源：columns=5 时编辑模式的行组上限与普通模式一致", async () => {
     const user = userEvent.setup();
     const fiveColumns: SiteSettings = { ...settings, columns: 5 };
     seed({
@@ -321,13 +321,14 @@ describe("进入 / 退出编辑模式", () => {
       privateData: { ...privateData, settings: fiveColumns },
     });
     const { container } = renderPage();
-    const grid = () => container.querySelector<HTMLElement>("#cat-c-dev .grid");
+    const grid = () =>
+      container.querySelector<HTMLElement>("#cat-c-dev [data-link-grid]");
 
-    expect(grid()).toHaveClass("xl:grid-cols-5");
+    expect(grid()).toHaveStyle({ maxWidth: "899.5px" });
 
     await enterEdit(user);
 
-    expect(grid()).toHaveClass("xl:grid-cols-5");
+    expect(grid()).toHaveStyle({ maxWidth: "899.5px" });
   });
 });
 
