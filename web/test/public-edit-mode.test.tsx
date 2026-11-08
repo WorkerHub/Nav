@@ -330,6 +330,37 @@ describe("进入 / 退出编辑模式", () => {
 
     expect(grid()).toHaveStyle({ maxWidth: "899.5px" });
   });
+
+  it("tileSize=medium：普通/编辑同档（行组 1240px），砖与「+」砖都是 113px", async () => {
+    const user = userEvent.setup();
+    const medium: SiteSettings = {
+      ...settings,
+      columns: 8,
+      tileSize: "medium",
+    };
+    seed({
+      publicData: { ...publicData, settings: medium },
+      privateData: { ...privateData, settings: medium },
+    });
+    const { container } = renderPage();
+    const grid = () =>
+      container.querySelector<HTMLElement>("#cat-c-dev [data-link-grid]");
+
+    expect(grid()).toHaveStyle({ maxWidth: "1240px" });
+    expect(screen.getByRole("link", { name: /MDN/ })).toHaveClass(
+      "size-[113px]",
+    );
+
+    await enterEdit(user);
+
+    expect(grid()).toHaveStyle({ maxWidth: "1240px" });
+    expect(screen.getByRole("button", { name: "MDN" })).toHaveClass(
+      "size-[113px]",
+    );
+    expect(
+      screen.getByRole("button", { name: "向「开发」新增链接" }),
+    ).toHaveClass("size-[113px]");
+  });
 });
 
 describe("编辑模式：单击砖复用后台编辑弹窗", () => {

@@ -3,10 +3,13 @@ import {
   CLASSIC_MAX_GAP,
   CLASSIC_MIN_GAP,
   CLASSIC_TILE_SIZE,
+  CLASSIC_TILE_SIZES,
+  CLASSIC_TILE_SIZE_CLASS,
   DEFAULT_COLUMNS,
   classicGridMetrics,
   resolveColumns,
 } from "@/lib/grid-columns";
+import { TILE_SIZE_OPTIONS } from "@/lib/tile-size";
 
 /**
  * 站点设置 `columns` → classic 排布参数：
@@ -74,5 +77,53 @@ describe("classicGridMetrics：固定方砖 + 间距调个数", () => {
     for (const value of [0, undefined, null, 5.5, -1, 13]) {
       expect(classicGridMetrics(value)).toEqual(fallback);
     }
+  });
+});
+
+/**
+ * 砖块尺寸三档：砖宽入参化后，maxWidth 与 columnGap 都改用当档砖宽，
+ * 算法结构不变（见 lib/grid-columns.ts）。
+ */
+describe("classicGridMetrics：tileSize 三档", () => {
+  it("三档砖宽与静态尺寸类一一对应", () => {
+    expect(CLASSIC_TILE_SIZES).toEqual({
+      large: 141.5,
+      medium: 113,
+      small: 92,
+    });
+    for (const size of TILE_SIZE_OPTIONS) {
+      expect(CLASSIC_TILE_SIZE_CLASS[size]).toBe(
+        `size-[${CLASSIC_TILE_SIZES[size]}px]`,
+      );
+    }
+    expect(CLASSIC_TILE_SIZE).toBe(CLASSIC_TILE_SIZES.large);
+  });
+
+  it("medium 8 列：行组 1240px，间距被减 904px、除数 7", () => {
+    const metrics = classicGridMetrics(8, "medium");
+    expect(metrics.maxWidth).toBe(1240);
+    expect(metrics.columnGap).toBe(
+      "clamp(12px, calc((100% - 904px) / 7), 48px)",
+    );
+  });
+
+  it("small 8 列：行组 1072px，间距被减 736px、除数 7", () => {
+    const metrics = classicGridMetrics(8, "small");
+    expect(metrics.maxWidth).toBe(1072);
+    expect(metrics.columnGap).toBe(
+      "clamp(12px, calc((100% - 736px) / 7), 48px)",
+    );
+  });
+
+  it("三档下 columns=1 都只有一块砖，间距固定 12px", () => {
+    for (const size of TILE_SIZE_OPTIONS) {
+      const metrics = classicGridMetrics(1, size);
+      expect(metrics.maxWidth).toBe(CLASSIC_TILE_SIZES[size]);
+      expect(metrics.columnGap).toBe("12px");
+    }
+  });
+
+  it("不传 tileSize 与传 large 完全一致（缺省回大号）", () => {
+    expect(classicGridMetrics(8)).toEqual(classicGridMetrics(8, "large"));
   });
 });

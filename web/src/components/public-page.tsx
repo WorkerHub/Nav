@@ -12,6 +12,7 @@ import { WallpaperBackground } from "@/components/wallpaper-background";
 import { resolveColumns } from "@/lib/grid-columns";
 import { resolveLinkStyle } from "@/lib/link-style";
 import { resolveShowUrl } from "@/lib/show-url";
+import { resolveTileSize } from "@/lib/tile-size";
 import { useAuthenticated, useNavStore } from "@/lib/nav-store";
 import {
   filterByScene,
@@ -127,6 +128,9 @@ export function PublicPage({ onOpenAdmin }: { onOpenAdmin: () => void }) {
   // 数成块、整块居中，窄屏放不下整块时一行自然少放几块；compact / wide 不使用
   // 该值（由 linkGridLayout 忽略）
   const columns = resolveColumns(settings?.columns);
+  // classic 砖块尺寸（站点设置 tileSize，缺省 large）：砖宽、行组与砖内字号都按
+  // 当档算；compact / wide 不使用该值
+  const tileSize = resolveTileSize(settings);
 
   // 私有标识：/api/private 的分类 DTO 不含 visibility，用「全量里有、公开列表里没有」推导私有分类。
   const publicIds = new Set(publicData?.categories.map((c) => c.id) ?? []);
@@ -215,6 +219,7 @@ export function PublicPage({ onOpenAdmin }: { onOpenAdmin: () => void }) {
             categories={visibleCategories}
             linkStyle={linkStyle}
             columns={columns}
+            tileSize={tileSize}
             privateCategories={privateIds}
             onEditLink={setEditingLinkId}
             onRemoveLink={removeLinkOnHome}
@@ -231,6 +236,7 @@ export function PublicPage({ onOpenAdmin }: { onOpenAdmin: () => void }) {
                   linkStyle={linkStyle}
                   showUrl={showUrl}
                   columns={columns}
+                  tileSize={tileSize}
                 />
               </FadeIn>
             ))}

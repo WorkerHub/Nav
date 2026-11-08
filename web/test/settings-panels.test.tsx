@@ -367,7 +367,7 @@ describe("SettingsPanel：站点主题已删除", () => {
       screen
         .getAllByRole("combobox")
         .map((el) => el.getAttribute("aria-label")),
-    ).toEqual(["选择壁纸来源", "选择链接样式"]);
+    ).toEqual(["选择壁纸来源", "选择链接样式", "选择砖块尺寸"]);
   });
 
   it("保存请求里不带 theme 字段", async () => {
@@ -413,6 +413,8 @@ describe("SettingsPanel：成块列数字段只在 classic 下显示", () => {
 
       expect(screen.queryByLabelText("每行卡片数（1–12）")).toBeNull();
       expect(screen.queryByText("每行卡片数（1–12）")).toBeNull();
+      expect(screen.queryByLabelText("砖块尺寸")).toBeNull();
+      expect(screen.queryByText("砖块尺寸")).toBeNull();
       unmount();
     }
   });
@@ -440,5 +442,75 @@ describe("SettingsPanel：成块列数字段只在 classic 下显示", () => {
       screen.getByRole("option", { name: "经典（图标上、名称下）" }),
     );
     expect(screen.getByLabelText("每行卡片数（1–12）")).toHaveValue(6);
+  });
+});
+
+describe("SettingsPanel：砖块尺寸（classic）", () => {
+  beforeEach(() => {
+    uploadMock.mockReset();
+    updateSettingsMock.mockReset();
+    updateSettingsMock.mockImplementation(async (input) => ({
+      ...baseSettings,
+      ...input,
+    }));
+  });
+
+  it("classic 下显示三档并回显当前值（缺省回大）", () => {
+    const { unmount } = render(
+      <SettingsPanel settings={baseSettings} onChanged={vi.fn()} />,
+    );
+    expect(
+      screen.getByRole("combobox", { name: "选择砖块尺寸" }),
+    ).toHaveTextContent("大（141.5px）");
+    unmount();
+
+    render(
+      <SettingsPanel
+        settings={{ ...baseSettings, tileSize: "medium" }}
+        onChanged={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByRole("combobox", { name: "选择砖块尺寸" }),
+    ).toHaveTextContent("中（113px）");
+  });
+
+  it("切到小档保存：提交 tileSize=small", async () => {
+    const user = userEvent.setup();
+    render(
+      <SettingsPanel
+        settings={{ ...baseSettings, tileSize: "medium" }}
+        onChanged={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole("combobox", { name: "选择砖块尺寸" }));
+    await user.click(screen.getByRole("option", { name: "小（92px）" }));
+    await user.click(screen.getByRole("button", { name: "保存设置" }));
+
+    await waitFor(() => expect(updateSettingsMock).toHaveBeenCalledTimes(1));
+    expect(updateSettingsMock.mock.calls[0][0]).toMatchObject({
+      tileSize: "small",
+    });
+  });
+
+  it("compact / wide 下与列数一起隐藏，切回 classic 仍回显原值", async () => {
+    const user = userEvent.setup();
+    render(
+      <SettingsPanel
+        settings={{ ...baseSettings, tileSize: "small", linkStyle: "compact" }}
+        onChanged={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByLabelText("砖块尺寸")).toBeNull();
+
+    await user.click(screen.getByRole("combobox", { name: "选择链接样式" }));
+    await user.click(
+      screen.getByRole("option", { name: "经典（图标上、名称下）" }),
+    );
+    expect(
+      screen.getByRole("combobox", { name: "选择砖块尺寸" }),
+    ).toHaveTextContent("小（92px）");
   });
 });

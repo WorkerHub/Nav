@@ -1,9 +1,12 @@
 import type { CSSProperties } from "react";
 import { FadeIn, GlassCard } from "@/components/glass";
 import { SiteIcon } from "@/components/site-icon";
-import { classicGridMetrics } from "@/lib/grid-columns";
+import {
+  CLASSIC_TILE_SIZE_CLASS,
+  classicGridMetrics,
+} from "@/lib/grid-columns";
 import { safeHost } from "@/lib/icons";
-import type { LinkStyle, SiteCategory, SiteLink } from "@/lib/types";
+import type { LinkStyle, SiteCategory, SiteLink, TileSize } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 /**
@@ -19,8 +22,8 @@ import { cn } from "@/lib/utils";
  * 每一条都包一层 `FadeIn`（错峰入场，与改动前一致）；外链属性
  * `target="_blank" rel="noopener noreferrer"` 三档一致。
  *
- * 图标一律放进固定边长的「图标盒」（`LinkIcon` + `LINK_ICON_BOX`）：盒子的宽高
- * 只由档位决定、与图标文件自身的尺寸无关，图标在盒内等比缩放完整显示
+ * 图标一律放进固定边长的「图标盒」（`LinkIcon` + `LINK_ICON_BOX` / `CLASSIC_ICON_BOX`）：
+ * 盒子的宽高只由档位决定、与图标文件自身的尺寸无关，图标在盒内等比缩放完整显示
  * （`object-contain`）—— 所以同一行的图标外接尺寸一致，不拉伸、不裁切。
  * 圆角（`rounded-md`）与透明底仍是图标元素自己的样式，没有额外底色或描边。
  *
@@ -34,11 +37,11 @@ import { cn } from "@/lib/utils";
  * （classic 是固定方砖、compact / wide 撑满格子；单击打开编辑弹窗，不跳转），并传
  * `singleLine` 让名称与网址各占一行、超长截断省略号（悬停 `title` 看全称）。
  *
- * classic 的排布模型（规格已定版）：固定边长方砖（`linkTileClassName` 里的
- * `size-[141.5px]`）+ flex 换行 + **整块居中 + 末行左对齐**。`columns` 是成块
- * 列数，行组的最大宽度由它算出（见 lib/grid-columns.ts 的 `classicGridMetrics`）；
- * 窄屏放不下整块时一行自然少放几块。砖再也不会被容器拉宽，所以列数设小时看到
- * 的是「同样的方砖、更少更松」，而不是大宽矩形。
+ * classic 的排布模型（规格已定版）：固定边长方砖（边长按站点设置 `tileSize`
+ * 从 `CLASSIC_TILE_SIZE_CLASS` 取静态类）+ flex 换行 + **整块居中 + 末行左对齐**。
+ * `columns` 是成块列数，行组的最大宽度由它与当档砖宽算出（见 lib/grid-columns.ts
+ * 的 `classicGridMetrics`）；窄屏放不下整块时一行自然少放几块。砖再也不会被容器
+ * 拉宽，所以列数设小时看到的是「同样的方砖、更少更松」，而不是大宽矩形。
  */
 
 /**
@@ -67,11 +70,12 @@ export const LINK_GRID_CLASS: Record<LinkStyle, string> = {
 export function linkGridLayout(
   linkStyle: LinkStyle,
   columns?: number | null,
+  tileSize: TileSize = "large",
 ): { className: string; style?: CSSProperties } {
   if (linkStyle !== "classic") {
     return { className: LINK_GRID_CLASS[linkStyle] };
   }
-  const { maxWidth, columnGap } = classicGridMetrics(columns);
+  const { maxWidth, columnGap } = classicGridMetrics(columns, tileSize);
   return {
     className: LINK_GRID_CLASS.classic,
     style: { maxWidth, columnGap },
@@ -80,8 +84,8 @@ export function linkGridLayout(
 
 /**
  * 图标盒边长（px，按链接样式分档）：同一档内所有链接共用一个定值，图标盒因此
- * 全站同档同尺寸。三档的数值与改动前的图标尺寸一致（classic 44 / wide 36 /
- * compact 20），换档只换盒子大小、不改图标本身的圆角与背景。
+ * 全站同档同尺寸。compact / wide 与改动前一致（36 / 20）；classic 随砖块尺寸
+ * 三档变化（见 `CLASSIC_ICON_BOX`），不改图标本身的圆角与背景。
  */
 export const LINK_ICON_BOX: Record<LinkStyle, number> = {
   classic: 44,
@@ -89,20 +93,70 @@ export const LINK_ICON_BOX: Record<LinkStyle, number> = {
   compact: 20,
 };
 
+/** classic 图标盒三档边长（px）：large 沿用 44，medium / small 随方砖缩小。 */
+export const CLASSIC_ICON_BOX: Record<TileSize, number> = {
+  large: 44,
+  medium: 36,
+  small: 28,
+};
+
+/**
+ * classic 砖内密度（按档）：gap / 内距与名称、网址的静态字号类。
+ *
+ * 数值按「内容能装进方砖」反推（两行名称 + 网址）：
+ * large 44+8+40+8+16+24=140 ≤ 141.5；
+ * medium 36+6+32+6+16+12=108 ≤ 113；
+ * small 28+4+32+4+16+4=88 ≤ 92。
+ * 字号类必须是字面量（Tailwind 只扫源码字面量），不能按档动态拼。
+ */
+const CLASSIC_TILE_DENSITY: Record<
+  TileSize,
+  { gap: string; padding: string; title: string; url: string }
+> = {
+  large: {
+    gap: "gap-2",
+    padding: "px-2 py-3",
+    title: "text-sm",
+    url: "text-xs",
+  },
+  medium: {
+    gap: "gap-1.5",
+    padding: "px-2 py-1.5",
+    title: "text-[13px] leading-4",
+    url: "text-xs",
+  },
+  small: {
+    gap: "gap-1",
+    padding: "px-1.5 py-0.5",
+    title: "text-xs",
+    url: "text-[11px] leading-4",
+  },
+};
+
 /**
  * 一块链接砖的外壳类（三档形状）。正常模式挂在 `<a>`、编辑模式挂在 div 上，
  * 两处必须同源，避免「编辑模式一进去样式就变」。
+ *
+ * classic 的边长与内距随站点设置 `tileSize` 变；compact / wide 排法固定，
+ * 忽略第二个参数。
  */
-export function linkTileClassName(linkStyle: LinkStyle): string {
+export function linkTileClassName(
+  linkStyle: LinkStyle,
+  tileSize: TileSize = "large",
+): string {
   if (linkStyle === "compact") {
     return "flex h-full items-center gap-2 rounded-xl px-2 py-2 text-start text-white/90 transition-colors hover:bg-white/10 hover:text-white";
   }
   if (linkStyle === "wide") {
     return "glass glass-hover flex h-full items-center gap-3 rounded-2xl px-4 py-3 text-start";
   }
-  // 固定方砖（141.5×141.5）：高度按「图标 44 + 名称两行 40 + 网址 16 + 两处 8 间距
-  // + 上下各 12 内距 = 140」压到 py-3，两行名称也装得下；内容再多就靠单行/两行截断。
-  return "glass glass-hover group flex size-[141.5px] shrink-0 flex-col items-center justify-center gap-2 rounded-2xl px-2 py-3 text-center";
+  const density = CLASSIC_TILE_DENSITY[tileSize];
+  return cn(
+    "glass glass-hover group flex shrink-0 flex-col items-center justify-center rounded-2xl text-center",
+    CLASSIC_TILE_SIZE_CLASS[tileSize],
+    density.gap,
+    density.padding,
+  );
 }
 
 /**
@@ -113,11 +167,17 @@ export function linkTileClassName(linkStyle: LinkStyle): string {
 function LinkIcon({
   link,
   linkStyle,
+  tileSize = "large",
 }: {
   link: SiteLink;
   linkStyle: LinkStyle;
+  /** classic 的砖块尺寸档；compact / wide 忽略 */
+  tileSize?: TileSize;
 }) {
-  const size = LINK_ICON_BOX[linkStyle];
+  const size =
+    linkStyle === "classic"
+      ? CLASSIC_ICON_BOX[tileSize]
+      : LINK_ICON_BOX[linkStyle];
   return (
     <span
       data-icon-box={linkStyle}
@@ -149,6 +209,7 @@ export function LinkTileContent({
   linkStyle,
   singleLine = false,
   showUrl = true,
+  tileSize = "large",
 }: {
   link: SiteLink;
   linkStyle: LinkStyle;
@@ -156,6 +217,8 @@ export function LinkTileContent({
   singleLine?: boolean;
   /** 是否渲染网址行（站点设置 `showUrl`）；编辑模式不传，恒显示 */
   showUrl?: boolean;
+  /** classic 的砖块尺寸档（站点设置 `tileSize`）；compact / wide 忽略 */
+  tileSize?: TileSize;
 }) {
   const host = safeHost(link.url);
   // 只在编辑模式补 title：普通模式的 DOM 与提示行为保持改动前一致
@@ -195,13 +258,15 @@ export function LinkTileContent({
       </>
     );
   }
+  const density = CLASSIC_TILE_DENSITY[tileSize];
   return (
     <>
-      <LinkIcon link={link} linkStyle="classic" />
+      <LinkIcon link={link} linkStyle="classic" tileSize={tileSize} />
       <span
         title={titleAttr}
         className={cn(
-          "w-full text-sm font-medium text-foreground/90",
+          "w-full font-medium text-foreground/90",
+          density.title,
           singleLine ? "truncate" : "line-clamp-2",
         )}
       >
@@ -210,7 +275,7 @@ export function LinkTileContent({
       {showUrl && (
         <span
           title={hostAttr}
-          className="w-full truncate text-xs text-muted-foreground"
+          className={cn("w-full truncate text-muted-foreground", density.url)}
         >
           {host}
         </span>
@@ -224,10 +289,12 @@ function LinkTile({
   link,
   index,
   showUrl,
+  tileSize,
 }: {
   link: SiteLink;
   index: number;
   showUrl: boolean;
+  tileSize: TileSize;
 }) {
   return (
     <FadeIn delay={Math.min(index * 0.02, 0.3)} className="shrink-0">
@@ -235,9 +302,14 @@ function LinkTile({
         href={link.url}
         target="_blank"
         rel="noopener noreferrer"
-        className={linkTileClassName("classic")}
+        className={linkTileClassName("classic", tileSize)}
       >
-        <LinkTileContent link={link} linkStyle="classic" showUrl={showUrl} />
+        <LinkTileContent
+          link={link}
+          linkStyle="classic"
+          showUrl={showUrl}
+          tileSize={tileSize}
+        />
       </a>
     </FadeIn>
   );
@@ -252,6 +324,8 @@ function CompactLinkTile({
   link: SiteLink;
   index: number;
   showUrl: boolean;
+  /** 接受但忽略：与 LinkGrid 的统一 props 对齐 */
+  tileSize?: TileSize;
 }) {
   return (
     <FadeIn delay={Math.min(index * 0.02, 0.3)}>
@@ -277,6 +351,8 @@ function WideLinkTile({
   link: SiteLink;
   index: number;
   showUrl: boolean;
+  /** 接受但忽略：与 LinkGrid 的统一 props 对齐 */
+  tileSize?: TileSize;
 }) {
   return (
     <FadeIn delay={Math.min(index * 0.02, 0.3)}>
@@ -297,6 +373,7 @@ export function LinkGrid({
   linkStyle = "classic",
   showUrl = true,
   columns,
+  tileSize = "large",
 }: {
   links: SiteLink[];
   linkStyle?: LinkStyle;
@@ -304,6 +381,8 @@ export function LinkGrid({
   showUrl?: boolean;
   /** classic 成块列数（站点设置 `columns`，1–12）；缺省/0 回默认值 */
   columns?: number;
+  /** classic 砖块尺寸（站点设置 `tileSize`）；缺省 large */
+  tileSize?: TileSize;
 }) {
   const Tile =
     linkStyle === "compact"
@@ -311,12 +390,18 @@ export function LinkGrid({
       : linkStyle === "wide"
         ? WideLinkTile
         : LinkTile;
-  const { className, style } = linkGridLayout(linkStyle, columns);
+  const { className, style } = linkGridLayout(linkStyle, columns, tileSize);
 
   return (
     <div className={className} style={style} data-link-grid={linkStyle}>
       {links.map((link, i) => (
-        <Tile key={link.id} link={link} index={i} showUrl={showUrl} />
+        <Tile
+          key={link.id}
+          link={link}
+          index={i}
+          showUrl={showUrl}
+          tileSize={tileSize}
+        />
       ))}
     </div>
   );
@@ -360,6 +445,7 @@ export function CategorySection({
   linkStyle = "classic",
   showUrl = true,
   columns,
+  tileSize = "large",
 }: {
   category: SiteCategory;
   privateZone?: boolean;
@@ -368,6 +454,8 @@ export function CategorySection({
   showUrl?: boolean;
   /** classic 成块列数（站点设置 `columns`，1–12）；缺省/0 回默认值 */
   columns?: number;
+  /** classic 砖块尺寸（站点设置 `tileSize`）；缺省 large */
+  tileSize?: TileSize;
 }) {
   return (
     <section id={`cat-${category.id}`} className="scroll-mt-6">
@@ -377,6 +465,7 @@ export function CategorySection({
         linkStyle={linkStyle}
         showUrl={showUrl}
         columns={columns}
+        tileSize={tileSize}
       />
     </section>
   );

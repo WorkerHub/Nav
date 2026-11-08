@@ -477,6 +477,103 @@ describe("settings linkStyle (link_style)", () => {
 });
 
 /**
+ * `tileSize`（classic 砖块尺寸）：KV 键 `tile_size`，值 `large`/`medium`/`small`。
+ * 存量库无此键时 DTO 按 `large` 返回；公开端点同样带出该字段给前端。
+ */
+describe("settings tileSize (tile_size)", () => {
+  let env: Env;
+  let app: Hono;
+  let cookie: string;
+
+  beforeEach(async () => {
+    env = makeEnv();
+    app = makeApp();
+    await runMigrations(env);
+    cookie = await signIn(app, env);
+  });
+
+  it("defaults to large when the key is absent (admin + public DTO)", async () => {
+    expect(storedSetting(env, "tile_size")).toBeNull();
+
+    const admin = await readJson(await getSettings(app, env, cookie));
+    expect(admin.tileSize).toBe("large");
+
+    const pub = await readJson(await app.request("/api/public", {}, env));
+    expect(pub.settings.tileSize).toBe("large");
+
+    // Reading the default never writes a row.
+    expect(storedSetting(env, "tile_size")).toBeNull();
+  });
+
+  it("round-trips large/medium/small and mirrors into /api/public", async () => {
+    for (const tileSize of ["medium", "small", "large"] as const) {
+      const res = await putSettings(app, env, cookie, { tileSize });
+      expect(res.status).toBe(200);
+      expect((await readJson(res)).tileSize).toBe(tileSize);
+      expect(storedSetting(env, "tile_size")).toBe(tileSize);
+      expect(
+        (await readJson(await app.request("/api/public", {}, env))).settings
+          .tileSize,
+      ).toBe(tileSize);
+    }
+  });
+
+  it("keeps the stored value when other settings are written", async () => {
+    await putSettings(app, env, cookie, { tileSize: "small" });
+    const res = await putSettings(app, env, cookie, { siteTitle: "nav2" });
+    const body = await readJson(res);
+    expect(body.siteTitle).toBe("nav2");
+    expect(body.tileSize).toBe("small");
+  });
+
+  it("rejects invalid values with 400 and keeps the stored value", async () => {
+    await putSettings(app, env, cookie, { tileSize: "medium" });
+    for (const tileSize of ["huge", "Large", "medium ", "", null, 1, true]) {
+      const res = await putSettings(app, env, cookie, { tileSize });
+      expect(res.status).toBe(400);
+      expect(await readJson(res)).toEqual({
+        error: "tileSize must be 'large', 'medium' or 'small'",
+      });
+    }
+    expect(storedSetting(env, "tile_size")).toBe("medium");
+  });
+
+  it("rejects the whole write when tileSize is invalid (no partial update)", async () => {
+    const res = await putSettings(app, env, cookie, {
+      siteTitle: "nav2",
+      tileSize: "huge",
+    });
+    expect(res.status).toBe(400);
+    expect(storedSetting(env, "site_title")).toBeNull();
+    expect(storedSetting(env, "tile_size")).toBeNull();
+  });
+
+  it("normalizes a dirty stored value to large (admin + public DTO)", async () => {
+    (env.DB as unknown as SqliteD1).db
+      .prepare("INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)")
+      .run("tile_size", "huge", "2026-11-08T00:00:00.000Z");
+
+    const admin = await readJson(await getSettings(app, env, cookie));
+    expect(admin.tileSize).toBe("large");
+
+    const pub = await readJson(await app.request("/api/public", {}, env));
+    expect(pub.settings.tileSize).toBe("large");
+
+    // The dirty row itself is left untouched (no migration, no rewrite).
+    expect(storedSetting(env, "tile_size")).toBe("huge");
+  });
+
+  it("lists tile_size in the settings whitelist", async () => {
+    const res = await app.request(
+      "/api/admin/settings/keys",
+      { headers: { cookie } },
+      env,
+    );
+    expect((await readJson(res)).keys).toContain("tile_size");
+  });
+});
+
+/**
  * 站点主题已删除（2026-11-05 定版）：`theme` 不再是站点设置 —— 前后台/公开端点
  * 的 settings DTO 都不含它，写入白名单也不再接受它；存量的 `theme` 行不删不迁移
  * （停止读写后即无害残留）。
