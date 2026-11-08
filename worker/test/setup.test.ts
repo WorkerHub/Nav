@@ -425,6 +425,7 @@ describe("admin system endpoints", () => {
       "linkStyle",
       "logoUrl",
       "searchNewTab",
+      "showUrl",
       "siteTitle",
       "wallpaperSource",
     ]);

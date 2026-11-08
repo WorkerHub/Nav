@@ -50,6 +50,7 @@ import {
   LINK_STYLE_OPTIONS,
   resolveLinkStyle,
 } from "@/lib/link-style";
+import { resolveShowUrl } from "@/lib/show-url";
 import { useNavStore } from "@/lib/nav-store";
 import type {
   AdminCategory,
@@ -265,6 +266,8 @@ export function SettingsPanel({
     searchNewTab: settings.searchNewTab ?? true,
     // 后端该键未落地 / 旧缓存时同样缺字段：契约缺省 classic（读侧统一兜底）
     linkStyle: resolveLinkStyle(settings),
+    // 缺字段时按默认开：首页照旧显示网址（与 linkStyle 同一套读侧兜底）
+    showUrl: resolveShowUrl(settings),
   });
 
   const save = async () => {
@@ -382,6 +385,14 @@ export function SettingsPanel({
             onCheckedChange={(searchNewTab) =>
               setForm({ ...form, searchNewTab })
             }
+          />
+        </div>
+        <div className="flex items-center justify-between gap-4 rounded-lg border p-3">
+          <Label htmlFor="set-show-url">显示网址</Label>
+          <Switch
+            id="set-show-url"
+            checked={resolveShowUrl(form)}
+            onCheckedChange={(showUrl) => setForm({ ...form, showUrl })}
           />
         </div>
       </div>
