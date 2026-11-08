@@ -19,7 +19,9 @@ import { cn } from "@/lib/utils";
  *    `columns`（1–12）是**成块列数**：桌面按这个数成块、整块居中，窄屏放不下
  *    整块时一行自然少放几块（0/未配置回默认 8）；
  *  - compact：小图标左、名称右（单行省略），透明无卡片底、不显示域名，桌面 5 列；
- *  - wide：玻璃底宽卡，图标左、右侧名称 + 域名两行，桌面 3 列 / 窄屏 1–2 列。
+ *  - wide：玻璃底宽卡，图标（56px、垂直居中）左、右侧名称 + 域名两行；列模板
+ *    `repeat(auto-fill, minmax(min(300px, 100%), 380px))` —— 卡宽封顶 300–380px，
+ *    桌面一行多张、整行居中，窄屏自然折行，卡不再把整行撑满。
  *
  * 每一条都包一层 `FadeIn`（错峰入场，与改动前一致）；外链属性
  * `target="_blank" rel="noopener noreferrer"` 三档一致。
@@ -59,12 +61,19 @@ import { cn } from "@/lib/utils";
  * `max-width` 完成：满行正好填满行组宽度，`justify-start` 对满行没有影响；末行
  * 也不会为了居中而整体右移。`w-full` 给 `column-gap` 的百分比一个确定基准；间距
  * 与行组宽度来自 `linkGridLayout`（lib/grid-columns.ts 的 `classicGridMetrics`）。
+ *
+ * wide 用 CSS Grid 的 `auto-fill` 列模板（规格已定版）：轨道在 300–380px 之间，
+ * 一行放得下几张就放几张，多出来的宽度被 `justify-center` 对称留在两侧 —— 卡不再
+ * 被拉成整行宽。用 `auto-fill`（不是 `auto-fit`）：空轨道保留，末行的卡仍落在与
+ * 满行相同的列位上，不会为居中整体右移。轨道下限写 `min(300px, 100%)`：容器窄于
+ * 300px（如 320px 视口的内容区）时轨道跟着收缩，不会横向溢出；其余情况就等同于
+ * 规格里的 `minmax(300px, 380px)`。类名是源码里的字面量（Tailwind 只扫字面量）。
  */
 export const LINK_GRID_CLASS: Record<LinkStyle, string> = {
   classic: "mx-auto flex w-full flex-wrap content-start justify-start gap-y-3",
   compact:
     "grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5",
-  wide: "grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3",
+  wide: "grid gap-3 justify-center grid-cols-[repeat(auto-fill,minmax(min(300px,100%),380px))]",
 };
 
 /**
@@ -101,12 +110,13 @@ export const CLASSIC_ICON_BOX: Record<TileSize, number> = {
 
 /**
  * 图标盒边长（px，按链接样式分档）：同一档内所有链接共用一个定值，图标盒因此
- * 全站同档同尺寸。compact / wide 与改动前一致（36 / 20）；classic 取大档的 60%
- * 图标盒边长（逐档值见 `CLASSIC_ICON_BOX`），不改图标本身的圆角与背景。
+ * 全站同档同尺寸。compact 20（与改动前一致）、wide 56（图标在宽卡里垂直居中，
+ * 卡高 ≈ 56 + 上下内距 + 边框 ≈ 82px）、classic 取大档的 60% 图标盒边长（逐档值
+ * 见 `CLASSIC_ICON_BOX`），不改图标本身的圆角与背景。
  */
 export const LINK_ICON_BOX: Record<LinkStyle, number> = {
   classic: CLASSIC_ICON_BOX.large,
-  wide: 36,
+  wide: 56,
   compact: 20,
 };
 
