@@ -10,6 +10,7 @@ import { SearchBar } from "@/components/search-bar";
 import { SiteClock } from "@/components/site-clock";
 import { WallpaperBackground } from "@/components/wallpaper-background";
 import { resolveLinkStyle } from "@/lib/link-style";
+import { resolveShowUrl } from "@/lib/show-url";
 import { useAuthenticated, useNavStore } from "@/lib/nav-store";
 import {
   filterByScene,
@@ -119,6 +120,8 @@ export function PublicPage({ onOpenAdmin }: { onOpenAdmin: () => void }) {
     : categories;
   // 链接呈现形态（站点设置 linkStyle，缺省 classic；后端无该键时同样回落 classic）
   const linkStyle = resolveLinkStyle(settings);
+  // 是否显示网址（站点设置 showUrl，缺省开）：只影响普通模式，编辑模式恒显示
+  const showUrl = resolveShowUrl(settings);
 
   // 私有标识：/api/private 的分类 DTO 不含 visibility，用「全量里有、公开列表里没有」推导私有分类。
   const publicIds = new Set(publicData?.categories.map((c) => c.id) ?? []);
@@ -220,6 +223,7 @@ export function PublicPage({ onOpenAdmin }: { onOpenAdmin: () => void }) {
                   category={category}
                   privateZone={privateIds.has(category.id)}
                   linkStyle={linkStyle}
+                  showUrl={showUrl}
                 />
               </FadeIn>
             ))}

@@ -170,6 +170,35 @@ describe("PublicPage 头部：时钟块取代顶栏", () => {
     expect(link.parentElement?.parentElement).toHaveClass("xl:grid-cols-8");
   });
 
+  it("settings.showUrl=false：普通模式卡片不渲染域名，名称与跳转不变", () => {
+    seedSite({ ...baseSettings, showUrl: false });
+    render(<PublicPage onOpenAdmin={vi.fn()} />);
+
+    const link = screen.getByRole("link", { name: /GitHub/ });
+    expect(link).not.toHaveTextContent("github.com");
+    expect(link).toHaveTextContent("GitHub");
+    expect(link).toHaveAttribute("href", "https://github.com/");
+  });
+
+  it("showUrl=false 对 wide 档同样生效：只剩名称一行", () => {
+    seedSite({ ...baseSettings, linkStyle: "wide", showUrl: false });
+    render(<PublicPage onOpenAdmin={vi.fn()} />);
+
+    const link = screen.getByRole("link", { name: /GitHub/ });
+    expect(link).toHaveClass("glass");
+    expect(link).toHaveTextContent("GitHub");
+    expect(link).not.toHaveTextContent("github.com");
+  });
+
+  it("旧后端 / 旧缓存没有 showUrl：回落「开」，照旧显示域名", () => {
+    seedSite(baseSettings);
+    render(<PublicPage onOpenAdmin={vi.fn()} />);
+
+    expect(screen.getByRole("link", { name: /GitHub/ })).toHaveTextContent(
+      "github.com",
+    );
+  });
+
   it("不再渲染分类 anchor 栏，正文分类区块与链接照旧", () => {
     render(<PublicPage onOpenAdmin={vi.fn()} />);
 

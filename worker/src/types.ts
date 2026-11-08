@@ -203,6 +203,11 @@ export interface SiteSettingsDto {
   searchNewTab: boolean;
   /** 链接样式（settings key `link_style`）：缺省 `classic`，脏值同样归一。 */
   linkStyle: LinkStyle;
+  /**
+   * 首页链接卡是否显示网址（settings key `show_url`）：缺省 `true`（保持改动前的
+   * 呈现）。与 `searchNewTab` 同一套 KV 布尔惯例，值 `"1"`/`"0"`。
+   */
+  showUrl: boolean;
 }
 
 export interface SiteDataDto {

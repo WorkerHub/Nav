@@ -2,6 +2,7 @@ import { FadeIn, GlassCard } from "@/components/glass";
 import { SiteIcon } from "@/components/site-icon";
 import { safeHost } from "@/lib/icons";
 import type { LinkStyle, SiteCategory, SiteLink } from "@/lib/types";
+import { cn } from "@/lib/utils";
 
 /**
  * 链接网格（站点设置 `linkStyle` 决定呈现形态，全站统一、访客不可切）。
@@ -14,10 +15,20 @@ import type { LinkStyle, SiteCategory, SiteLink } from "@/lib/types";
  * 每一条都包一层 `FadeIn`（错峰入场，与改动前一致）；外链属性
  * `target="_blank" rel="noopener noreferrer"` 三档一致。
  *
+ * 图标一律放进固定边长的「图标盒」（`LinkIcon` + `LINK_ICON_BOX`）：盒子的宽高
+ * 只由档位决定、与图标文件自身的尺寸无关，图标在盒内等比缩放完整显示
+ * （`object-contain`）—— 所以同一行的图标外接尺寸一致，不拉伸、不裁切。
+ * 圆角（`rounded-md`）与透明底仍是图标元素自己的样式，没有额外底色或描边。
+ *
+ * 「显示网址」开关（站点设置 `showUrl`，缺省开）只作用于普通模式：关闭后 classic 与
+ * wide 两档不再渲染网址行（compact 本就没有网址行）。首页编辑模式不传 `showUrl`，
+ * 走默认 `true` —— 编辑场景要核对地址，恒显示网址。
+ *
  * 首页编辑模式（home-edit-board.tsx）复用同一套「砖的外观」：`linkTileClassName`
  * 给出三档外壳类、`LinkTileContent` 给出内层 DOM（图标 / 名称 / 域名）。正常模式
- * 仍把外壳挂在 `<a>` 上、DOM 与类名保持改动前一致；编辑模式把它挂在一个
- * `role="button"` 的 `<div>` 上（单击打开编辑弹窗，不跳转）。
+ * 仍把外壳挂在 `<a>` 上、DOM 与类名保持改动前一致；编辑模式把它挂在一个撑满网格
+ * 格子的 `<button>` 上（单击打开编辑弹窗，不跳转），并传 `singleLine` 让名称与网址
+ * 各占一行、超长截断省略号（悬停 `title` 看全称）。
  */
 
 /** 每档的网格列数（只有列数与间距不同，条目形状见下方各自的组件）。 */
@@ -27,6 +38,17 @@ export const LINK_GRID_CLASS: Record<LinkStyle, string> = {
   compact:
     "grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5",
   wide: "grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3",
+};
+
+/**
+ * 图标盒边长（px，按链接样式分档）：同一档内所有链接共用一个定值，图标盒因此
+ * 全站同档同尺寸。三档的数值与改动前的图标尺寸一致（classic 44 / wide 36 /
+ * compact 20），换档只换盒子大小、不改图标本身的圆角与背景。
+ */
+export const LINK_ICON_BOX: Record<LinkStyle, number> = {
+  classic: 44,
+  wide: 36,
+  compact: 20,
 };
 
 /**
@@ -43,67 +65,130 @@ export function linkTileClassName(linkStyle: LinkStyle): string {
   return "glass glass-hover group flex h-full flex-col items-center gap-2 rounded-2xl px-2 py-4 text-center";
 }
 
-/** 砖的内层内容（不含外壳）：三档各自的图标尺寸、名称与域名排布。 */
-export function LinkTileContent({
+/**
+ * 图标盒：固定边长的方块 + 居中，图标用 `fill` 填满盒子（等比完整显示由
+ * `SiteIcon` 的 `object-contain` 负责）。盒子尺寸只来自 `LINK_ICON_BOX`，
+ * 不受图标文件原始尺寸影响，因此不会因为图标大小不同把同一行撑得参差。
+ */
+function LinkIcon({
   link,
   linkStyle,
 }: {
   link: SiteLink;
   linkStyle: LinkStyle;
 }) {
+  const size = LINK_ICON_BOX[linkStyle];
+  return (
+    <span
+      data-icon-box={linkStyle}
+      className="inline-flex shrink-0 items-center justify-center"
+      style={{ width: size, height: size }}
+    >
+      <SiteIcon
+        title={link.title}
+        url={link.url}
+        iconUrl={link.iconUrl}
+        size={size}
+        fill
+      />
+    </span>
+  );
+}
+
+/**
+ * 砖的内层内容（不含外壳）：三档各自的图标尺寸、名称与域名排布。
+ *
+ * `singleLine`：编辑模式的砖宽高由网格给定（home-edit-board.tsx 把外壳撑满格子），
+ * 名称与网址各占一行、超长截断省略号，并补 `title` 让悬停可看全称；普通模式的砖
+ * 仍按改动前的排布（classic 名称最多两行），不传该 prop 即可。
+ *
+ * `showUrl`：普通模式的「显示网址」开关（站点设置 `showUrl`）；编辑模式不传，恒显示。
+ */
+export function LinkTileContent({
+  link,
+  linkStyle,
+  singleLine = false,
+  showUrl = true,
+}: {
+  link: SiteLink;
+  linkStyle: LinkStyle;
+  /** 名称单行截断 + 名称/网址补 title（编辑模式用；普通模式保持原排布） */
+  singleLine?: boolean;
+  /** 是否渲染网址行（站点设置 `showUrl`）；编辑模式不传，恒显示 */
+  showUrl?: boolean;
+}) {
+  const host = safeHost(link.url);
+  // 只在编辑模式补 title：普通模式的 DOM 与提示行为保持改动前一致
+  const titleAttr = singleLine ? link.title : undefined;
+  const hostAttr = singleLine ? host : undefined;
+
   if (linkStyle === "compact") {
     return (
       <>
-        <SiteIcon
-          title={link.title}
-          url={link.url}
-          iconUrl={link.iconUrl}
-          size={20}
-        />
-        <span className="min-w-0 flex-1 truncate text-sm">{link.title}</span>
+        <LinkIcon link={link} linkStyle="compact" />
+        <span title={titleAttr} className="min-w-0 flex-1 truncate text-sm">
+          {link.title}
+        </span>
       </>
     );
   }
   if (linkStyle === "wide") {
     return (
       <>
-        <SiteIcon
-          title={link.title}
-          url={link.url}
-          iconUrl={link.iconUrl}
-          size={36}
-        />
+        <LinkIcon link={link} linkStyle="wide" />
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-medium text-foreground/90">
+          <span
+            title={titleAttr}
+            className="block truncate text-sm font-medium text-foreground/90"
+          >
             {link.title}
           </span>
-          <span className="block truncate text-xs text-muted-foreground">
-            {safeHost(link.url)}
-          </span>
+          {showUrl && (
+            <span
+              title={hostAttr}
+              className="block truncate text-xs text-muted-foreground"
+            >
+              {host}
+            </span>
+          )}
         </span>
       </>
     );
   }
   return (
     <>
-      <SiteIcon
-        title={link.title}
-        url={link.url}
-        iconUrl={link.iconUrl}
-        size={44}
-      />
-      <span className="line-clamp-2 w-full text-sm font-medium text-foreground/90">
+      <LinkIcon link={link} linkStyle="classic" />
+      <span
+        title={titleAttr}
+        className={cn(
+          "w-full text-sm font-medium text-foreground/90",
+          singleLine ? "truncate" : "line-clamp-2",
+        )}
+      >
         {link.title}
       </span>
-      <span className="w-full truncate text-xs text-muted-foreground">
-        {safeHost(link.url)}
-      </span>
+      {showUrl && (
+        <span
+          title={hostAttr}
+          className="w-full truncate text-xs text-muted-foreground"
+        >
+          {host}
+        </span>
+      )}
     </>
   );
 }
 
 /** 经典：图标上、名称下、域名小字（改动前的原样） */
-function LinkTile({ link, index }: { link: SiteLink; index: number }) {
+function LinkTile({
+  link,
+  index,
+  showUrl,
+}: {
+  link: SiteLink;
+  index: number;
+  showUrl: boolean;
+}) {
   return (
     <FadeIn delay={Math.min(index * 0.02, 0.3)}>
       <a
@@ -112,14 +197,22 @@ function LinkTile({ link, index }: { link: SiteLink; index: number }) {
         rel="noopener noreferrer"
         className={linkTileClassName("classic")}
       >
-        <LinkTileContent link={link} linkStyle="classic" />
+        <LinkTileContent link={link} linkStyle="classic" showUrl={showUrl} />
       </a>
     </FadeIn>
   );
 }
 
 /** 紧凑：小图标左、名称右；无卡片底、不显示域名 */
-function CompactLinkTile({ link, index }: { link: SiteLink; index: number }) {
+function CompactLinkTile({
+  link,
+  index,
+  showUrl,
+}: {
+  link: SiteLink;
+  index: number;
+  showUrl: boolean;
+}) {
   return (
     <FadeIn delay={Math.min(index * 0.02, 0.3)}>
       <a
@@ -129,14 +222,22 @@ function CompactLinkTile({ link, index }: { link: SiteLink; index: number }) {
         title={link.title}
         className={linkTileClassName("compact")}
       >
-        <LinkTileContent link={link} linkStyle="compact" />
+        <LinkTileContent link={link} linkStyle="compact" showUrl={showUrl} />
       </a>
     </FadeIn>
   );
 }
 
 /** 宽卡片：玻璃底，图标左，右侧名称 + 域名两行 */
-function WideLinkTile({ link, index }: { link: SiteLink; index: number }) {
+function WideLinkTile({
+  link,
+  index,
+  showUrl,
+}: {
+  link: SiteLink;
+  index: number;
+  showUrl: boolean;
+}) {
   return (
     <FadeIn delay={Math.min(index * 0.02, 0.3)}>
       <a
@@ -145,7 +246,7 @@ function WideLinkTile({ link, index }: { link: SiteLink; index: number }) {
         rel="noopener noreferrer"
         className={linkTileClassName("wide")}
       >
-        <LinkTileContent link={link} linkStyle="wide" />
+        <LinkTileContent link={link} linkStyle="wide" showUrl={showUrl} />
       </a>
     </FadeIn>
   );
@@ -154,9 +255,12 @@ function WideLinkTile({ link, index }: { link: SiteLink; index: number }) {
 export function LinkGrid({
   links,
   linkStyle = "classic",
+  showUrl = true,
 }: {
   links: SiteLink[];
   linkStyle?: LinkStyle;
+  /** 是否渲染网址行（站点设置 `showUrl`）；缺省开 */
+  showUrl?: boolean;
 }) {
   const Tile =
     linkStyle === "compact"
@@ -168,7 +272,7 @@ export function LinkGrid({
   return (
     <div className={LINK_GRID_CLASS[linkStyle]}>
       {links.map((link, i) => (
-        <Tile key={link.id} link={link} index={i} />
+        <Tile key={link.id} link={link} index={i} showUrl={showUrl} />
       ))}
     </div>
   );
@@ -210,15 +314,22 @@ export function CategorySection({
   category,
   privateZone = false,
   linkStyle = "classic",
+  showUrl = true,
 }: {
   category: SiteCategory;
   privateZone?: boolean;
   linkStyle?: LinkStyle;
+  /** 是否渲染网址行（站点设置 `showUrl`）；缺省开 */
+  showUrl?: boolean;
 }) {
   return (
     <section id={`cat-${category.id}`} className="scroll-mt-6">
       <CategoryHeading category={category} privateZone={privateZone} />
-      <LinkGrid links={category.links} linkStyle={linkStyle} />
+      <LinkGrid
+        links={category.links}
+        linkStyle={linkStyle}
+        showUrl={showUrl}
+      />
     </section>
   );
 }

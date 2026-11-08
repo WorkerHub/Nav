@@ -124,6 +124,34 @@ describe("SiteIcon", () => {
     expect(currentImg(container).getAttribute("src")).toBe("/assets/b.png");
   });
 
+  it("缺省尺寸：img 自带 size×size 的宽高（圆角 + contain 不变）", () => {
+    const { container } = render(
+      <SiteIcon title="示例" url="https://example.com/" size={44} />,
+    );
+    const img = currentImg(container);
+    expect(img).toHaveStyle({ width: "44px", height: "44px" });
+    expect(img).toHaveClass("object-contain", "rounded-md", "shrink-0");
+  });
+
+  it("fill：不自带宽高，由外层图标盒量尺寸，仍保持 contain 与圆角", () => {
+    const { container } = render(
+      <SiteIcon title="示例" url="https://example.com/" size={44} fill />,
+    );
+    const img = currentImg(container);
+    expect(img).toHaveClass("size-full", "object-contain", "rounded-md");
+    expect(img.getAttribute("style")).toBeNull();
+  });
+
+  it("fill：首字圆回退同样填满图标盒", () => {
+    const { container } = render(
+      <SiteIcon title="示例" url="not a url" size={44} fill />,
+    );
+    const circle = screen.getByText("示");
+    expect(circle).toHaveClass("size-full", "rounded-full");
+    expect(circle.getAttribute("style")).not.toContain("width");
+    expect(container.querySelector("img")).toBeNull();
+  });
+
   it("旧 src 的 error 不推进新候选（候选变化时换元素）", () => {
     const urlA = "https://a.example.com/";
     const urlB = "https://b.example.com/";

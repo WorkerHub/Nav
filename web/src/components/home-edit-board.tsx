@@ -52,6 +52,13 @@ import type { LinkStyle, SiteCategory, SiteLink } from "@/lib/types";
  *
  * 触屏：`TouchSensor` 长按 250ms 才激活（普通滑动照常滚动页面），`MouseSensor`
  * 位移 6px 激活（单击不被吃掉）。拖拽覆盖层用 dnd-kit 原生 `DragOverlay`。
+ *
+ * 尺寸口径（2026-11-08）：砖的格子由 `LINK_GRID_CLASS` 给出（与普通模式同一个网格），
+ * 砖壳必须 **撑满格子** —— `<button>` 的 `width: auto` 在 Chrome 里按内容收缩，
+ * 不补 `w-full` 的话长名称/长网址的砖会比旁边的宽、甚至溢出格子。撑满后名称与网址
+ * 单行截断（`LinkTileContent` 的 `singleLine`）、悬停 `title` 看全称，同档砖因此
+ * 同宽同高；✕ 角标定位在外层格子 div 上，自然落在砖的右上角。拖拽预览用
+ * dnd-kit 的 `DragOverlay`：包裹层尺寸由它按砖的实测矩形给定，砖规整后预览也就一致。
  */
 
 /** 分类标题行投放目标（落到该分类末尾）的 id 前缀 */
@@ -73,7 +80,11 @@ const collisionDetection: CollisionDetection = (args) => {
   return endTarget ? [endTarget] : closestCorners(args);
 };
 
-/** 同档一块砖的高度（三档实测值）：编辑模式末尾的「+」砖与空分类落点共用 */
+/**
+ * 空分类落点 / 分类末尾「+」砖的高度：与同档一块砖一致（框内只有一个加号）——
+ * 实测值，砖壳撑满格子后三档分别落在 130 / 36 / 62px（classic 图标 44 + 名称与网址
+ * 各一行；compact 小图标单行；wide 图标 36 一行名称 + 一行域名），「+」砖随之对齐。
+ */
 const PLACEHOLDER_CLASS: Record<LinkStyle, string> = {
   classic: "min-h-[130px]",
   compact: "min-h-9",
@@ -198,15 +209,15 @@ function EditableTile({
         {...attributes}
         {...listeners}
         aria-label={link.title}
+        title={link.title}
         className={cn(
           linkTileClassName(linkStyle),
-          // `<button>` 在网格里按内容收缩（1440 下 141.5 的格子里只有 ~93）——
-          // 编辑模式的砖是按钮，必须自己撑满格子，才能和同排的「+」砖同宽
+          // 撑满网格格子（与普通模式的 `<a>` 同宽），名称/网址在砖内截断省略号
           "w-full min-w-0 cursor-grab select-none active:cursor-grabbing",
         )}
         onClick={() => onEdit(link.id)}
       >
-        <LinkTileContent link={link} linkStyle={linkStyle} />
+        <LinkTileContent link={link} linkStyle={linkStyle} singleLine />
       </button>
       <button
         type="button"
@@ -480,7 +491,11 @@ export function HomeEditBoard({
               "cursor-grabbing shadow-2xl",
             )}
           >
-            <LinkTileContent link={activeLink} linkStyle={linkStyle} />
+            <LinkTileContent
+              link={activeLink}
+              linkStyle={linkStyle}
+              singleLine
+            />
           </div>
         ) : null}
       </DragOverlay>

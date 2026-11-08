@@ -667,6 +667,7 @@ const SETTING_KEYS = [
   "search_new_tab",
   "wallpaper_source",
   "link_style",
+  "show_url",
 ] as const;
 
 adminRoutes.get("/settings", async (c) => {
@@ -724,6 +725,12 @@ adminRoutes.put("/settings", async (c) => {
     if (!isLinkStyle(body.linkStyle))
       return badRequest("linkStyle must be 'classic', 'compact' or 'wide'");
     updates.link_style = body.linkStyle;
+  }
+  if (body.showUrl !== undefined) {
+    // 同 searchNewTab：KV 布尔惯例 "1"/"0"，非布尔值整包拒绝。
+    if (typeof body.showUrl !== "boolean")
+      return badRequest("showUrl must be a boolean");
+    updates.show_url = body.showUrl ? "1" : "0";
   }
 
   for (const [key, value] of Object.entries(updates)) {
