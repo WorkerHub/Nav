@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>classic 排布实测：整块居中 + 末行左对齐</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --fg: #e8ecf4;
+        --muted: #9aa6bd;
+        --line: #2a3448;
+        --bg: #10151f;
+        --card: #161d2a;
+        --accent: #7dd3fc;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 40px 20px 72px;
+        background: var(--bg);
+        color: var(--fg);
+        font:
+          15px/1.7 -apple-system,
+          "PingFang SC",
+          "Hiragino Sans GB",
+          "Microsoft YaHei",
+          sans-serif;
+      }
+      main {
+        max-width: 1080px;
+        margin: 0 auto;
+      }
+      h1 {
+        font-size: 22px;
+        line-height: 1.4;
+        margin: 0 0 6px;
+      }
+      h2 {
+        font-size: 16px;
+        margin: 36px 0 10px;
+      }
+      p.lead {
+        margin: 0 0 4px;
+        color: var(--muted);
+      }
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 13px;
+        background: #0b1017;
+        border: 1px solid var(--line);
+        border-radius: 4px;
+        padding: 1px 5px;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 12px 0 0;
+        font-size: 14px;
+      }
+      th,
+      td {
+        border-bottom: 1px solid var(--line);
+        padding: 8px 10px;
+        text-align: left;
+        vertical-align: top;
+      }
+      th {
+        color: var(--muted);
+        font-weight: 600;
+        white-space: nowrap;
+      }
+      td.num {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        white-space: nowrap;
+      }
+      figure {
+        margin: 16px 0 0;
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 12px;
+      }
+      figure img {
+        display: block;
+        width: 100%;
+        height: auto;
+        border-radius: 8px;
+      }
+      figure.narrow img {
+        max-width: 390px;
+        margin: 0 auto;
+      }
+      figcaption {
+        margin-top: 10px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+      ul {
+        margin: 8px 0 0;
+        padding-left: 22px;
+      }
+      li {
+        margin: 4px 0;
+      }
+      .tag {
+        display: inline-block;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 1px 10px;
+        font-size: 12px;
+        color: var(--accent);
+        margin-right: 6px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>classic 排布实测：整块居中 + 末行左对齐</h1>
+      <p class="lead">
+        站点设置 <code>columns = 4</code>、<code>linkStyle = classic</code>，本地真跑
+        worker + 真实 D1 数据（1 个分类 10 条链接），Chrome 158 实测
+        <code>getBoundingClientRect()</code> 与 <code>getComputedStyle()</code>。
+      </p>
+      <p>
+        <span class="tag">桌面 1440×1200</span>
+        <span class="tag">窄屏 390×844</span>
+        <span class="tag">普通模式 + 首页编辑模式</span>
+      </p>
+
+      <h2>实测数字（columns = 4）</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>项目</th>
+            <th>实测值</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>容器类名</td>
+            <td>
+              <code>mx-auto flex w-full flex-wrap content-start justify-start
+                gap-y-3</code>
+              → <code>justify-content: flex-start</code>（不含
+              <code>justify-center</code>）
+            </td>
+          </tr>
+          <tr>
+            <td>行组宽度</td>
+            <td class="num">710px（4×141.5 + 3×48）</td>
+          </tr>
+          <tr>
+            <td>行组是否居中</td>
+            <td class="num">
+              正文内容区 112–1328（宽 1216）；行组 365–1075，中心 720 = 内容区中心
+              720，偏移 <b>0px</b>
+            </td>
+          </tr>
+          <tr>
+            <td>第 1 行（满行 4 块）</td>
+            <td class="num">x = 365 … 1075，间距 47.98px</td>
+          </tr>
+          <tr>
+            <td>第 2 行（满行 4 块）</td>
+            <td class="num">x = 365 … 1075，间距 47.98px</td>
+          </tr>
+          <tr>
+            <td>第 3 行（末行 2 块）</td>
+            <td class="num">
+              x = <b>365</b> … 696 —— 起点与满行完全一致（末行左对齐、上下列位对齐）
+            </td>
+          </tr>
+          <tr>
+            <td>砖尺寸</td>
+            <td class="num">141.5 × 141.5 px（与列数无关）</td>
+          </tr>
+          <tr>
+            <td>columns = 8（回归对照）</td>
+            <td class="num">
+              行组 1216px 占满内容区，首行 8 块 112–1328（间距 12），末行 2 块从 112
+              起排
+            </td>
+          </tr>
+          <tr>
+            <td>首页编辑模式（columns = 4）</td>
+            <td class="num">
+              同一容器类名、同一 710px 行组；砖位 365 / 554.5 / 744 / 933.5，末行 2
+              块 + 「+」砖依次从 365 起排
+            </td>
+          </tr>
+          <tr>
+            <td>窄屏 390 宽</td>
+            <td class="num">
+              行组 358px = 内容区全宽；每行 2 块、间距 12px；<code>scrollWidth =
+                clientWidth = 390</code>（不溢出）
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>截图：桌面 1440×1200（columns = 4）</h2>
+      <figure>
+        <img
+          src="classic-columns4-1440.webp"
+          alt="columns=4 时的公共页：两行各 4 块方砖居中，最后一行 2 块从与满行相同的列位起始"
+        />
+        <figcaption>
+          前两行 4 块，末行 2 块从左边第一列开始（不再为了居中而整体右移）；行组整体在页面
+          内容区水平居中。
+        </figcaption>
+      </figure>
+
+      <h2>截图：窄屏 390×844（columns = 4）</h2>
+      <figure class="narrow">
+        <img
+          src="classic-columns4-390.webp"
+          alt="390 宽窄屏：每行两块方砖，从左起排，页面不横向溢出"
+        />
+        <figcaption>
+          窄屏放不下 4 列，自动降成每行 2 块、间距收到最小值 12px，行组不超出屏幕；
+          每行同样从左起排，因此右侧会留下一段空白（宽约 63px）——这是「砖从左起排」的
+          直接结果，不是溢出。
+        </figcaption>
+      </figure>
+
+      <h2>口径说明</h2>
+      <ul>
+        <li>
+          <code>columns</code> 是<b>成块列数</b>：桌面按这个数成块，行组宽度 =
+          <code>n×141.5 + (n−1)×48</code>，整块由 <code>mx-auto</code> 居中。
+        </li>
+        <li>
+          满行正好填满行组宽度，<code>justify-start</code> 对满行没有影响；只有不满的末行
+          能看出差别：砖从行组左端开始，与满行同列对齐。
+        </li>
+        <li>
+          砖固定 141.5px、间距 12–48px、编辑模式同口径、compact / wide 三档不变，dnd-kit
+          策略未动。
+        </li>
+      </ul>
+    </main>
+  </body>
+</html>

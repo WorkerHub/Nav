@@ -44,21 +44,23 @@ function iconBox(link: HTMLElement, linkStyle: LinkStyle): HTMLElement {
 }
 
 describe("LinkGrid：三档样式", () => {
-  it("缺省（不传 linkStyle）= classic：固定方砖、图标上名称下域名小字，换行居中", () => {
+  it("缺省（不传 linkStyle）= classic：固定方砖、图标上名称下域名小字，整块居中 + 末行左对齐", () => {
     const { container } = render(<LinkGrid links={links} />);
 
-    // classic 不再是网格：固定方砖 + 弹性换行，逐行居中（含不满的最后一行）
+    // classic 不再是网格：固定方砖 + 弹性换行；砖从左起排（末行与满行同列），
+    // 整块靠 mx-auto + 内联 maxWidth 居中
     const gridEl = grid(container);
     expect(gridEl).toHaveClass(
       "flex",
       "flex-wrap",
       "w-full",
-      "justify-center",
+      "justify-start",
       "mx-auto",
     );
+    expect(gridEl).not.toHaveClass("justify-center");
     expect(gridEl).not.toHaveClass("grid");
     expect(gridEl).not.toHaveClass("grid-cols-8");
-    // 每行上限走内联 maxWidth（columns 未配置 = 默认 8）
+    // 行组宽度上限走内联 maxWidth（columns 未配置 = 默认 8）
     expect(gridEl).toHaveStyle({ maxWidth: "1468px" });
 
     const link = screen.getByRole("link", { name: /GitHub/ });
@@ -194,7 +196,7 @@ describe("CategorySection：把样式透传给网格，锚点偏移随顶栏移�
   });
 });
 
-describe("LinkGrid：classic 每行上限（站点设置 columns）", () => {
+describe("LinkGrid：classic 成块列数（站点设置 columns）", () => {
   it("columns=5：行组上限 899.5px（5 块 + 4 个 48px 间距），砖尺寸不变", () => {
     const { container } = render(<LinkGrid links={links} columns={5} />);
 

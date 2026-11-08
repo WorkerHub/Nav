@@ -360,15 +360,16 @@ export function SettingsPanel({
           onChange={(logoUrl) => setForm({ ...form, logoUrl })}
         />
         {/*
-          每行上限只对 classic 档有意义（compact / wide 的排法固定，#24 口径）：非 classic 时
+          成块列数只对 classic 档有意义（compact / wide 的排法固定，#24 口径）：非 classic 时
           整块隐藏、不加说明文字。`form.columns` 始终留在表单里（保存照旧整包提交），
           所以隐藏期间的值不会丢，切回 classic 输入框即回显原值。
-          语义是「上限」不是「实际列数」：卡片为固定方砖，窄屏一行会自然少放几块。
+          语义是「成块列数」：桌面按这个数成块、整块居中；卡片为固定方砖，窄屏
+          放不下整块时一行会自然少放几块，不满一行的末行从左起排（与满行同列）。
         */}
         {form.linkStyle === "classic" && (
           <div className="grid gap-2">
             <div className="grid max-w-[10rem] gap-2">
-              <Label htmlFor="set-cols">每行卡片上限（1–12）</Label>
+              <Label htmlFor="set-cols">每行卡片数（1–12）</Label>
               <Input
                 id="set-cols"
                 type="number"
@@ -381,7 +382,7 @@ export function SettingsPanel({
               />
             </div>
             <p className="text-sm text-muted-foreground">
-              卡片是固定方砖，屏幕变窄时一行会少于这个数。
+              卡片是固定方砖，桌面按这个数排成一块并整体居中；屏幕变窄时一行会少于这个数。
             </p>
           </div>
         )}

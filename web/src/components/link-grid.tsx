@@ -11,7 +11,8 @@ import { cn } from "@/lib/utils";
  *
  * 三档形状由 `resolveLinkStyle`（lib/link-style.ts）解析，缺省 classic：
  *  - classic：图标上、名称下、域名小字；砖是固定边长的**方砖**，站点设置 `columns`
- *    （1–12）只是**每行上限**，实际放几块由容器宽度与砖间距决定（0/未配置回默认 8）；
+ *    （1–12）是**成块列数**：桌面按这个数成块、整块居中，窄屏放不下整块时一行
+ *    自然少放几块（0/未配置回默认 8）；
  *  - compact：小图标左、名称右（单行省略），透明无卡片底、不显示域名，桌面 5 列；
  *  - wide：玻璃底宽卡，图标左、右侧名称 + 域名两行，桌面 3 列 / 窄屏 1–2 列。
  *
@@ -34,28 +35,30 @@ import { cn } from "@/lib/utils";
  * `singleLine` 让名称与网址各占一行、超长截断省略号（悬停 `title` 看全称）。
  *
  * classic 的排布模型（规格已定版）：固定边长方砖（`linkTileClassName` 里的
- * `size-[141.5px]`）+ flex 换行 + 逐行居中。`columns` 只是每行上限，宽度与间距
- * 决定实际块数（见 lib/grid-columns.ts 的 `classicGridMetrics`）。砖再也不会被
- * 容器拉宽，所以列数设小时看到的是「同样的方砖、更少更松」，而不是大宽矩形。
+ * `size-[141.5px]`）+ flex 换行 + **整块居中 + 末行左对齐**。`columns` 是成块
+ * 列数，行组的最大宽度由它算出（见 lib/grid-columns.ts 的 `classicGridMetrics`）；
+ * 窄屏放不下整块时一行自然少放几块。砖再也不会被容器拉宽，所以列数设小时看到
+ * 的是「同样的方砖、更少更松」，而不是大宽矩形。
  */
 
 /**
  * 每档的容器类名（条目形状见下方各自的组件）。
  *
- * classic 是弹性换行容器：固定方砖、`justify-center` 让每一行（含不满的最后一行）
- * 整段居中；`w-full` 给 `column-gap` 的百分比一个确定基准，再由 `mx-auto` +
- * 内联 `max-width` 把行组整体居中（多余宽度对称留在两侧）。间距与上限来自
- * `linkGridLayout`（lib/grid-columns.ts 的 `classicGridMetrics`）。
+ * classic 是弹性换行容器：固定方砖、`justify-start` 让砖从左起排 —— 不满列数的
+ * 末行因此落在与满行相同的列位上（上下对齐）。整块居中由 `mx-auto` + 内联
+ * `max-width` 完成：满行正好填满行组宽度，`justify-start` 对满行没有影响；末行
+ * 也不会为了居中而整体右移。`w-full` 给 `column-gap` 的百分比一个确定基准；间距
+ * 与行组宽度来自 `linkGridLayout`（lib/grid-columns.ts 的 `classicGridMetrics`）。
  */
 export const LINK_GRID_CLASS: Record<LinkStyle, string> = {
-  classic: "mx-auto flex w-full flex-wrap content-start justify-center gap-y-3",
+  classic: "mx-auto flex w-full flex-wrap content-start justify-start gap-y-3",
   compact:
     "grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5",
   wide: "grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3",
 };
 
 /**
- * 网格容器的完整排布：classic 额外带内联 `maxWidth` / `columnGap`（每行上限与
+ * 网格容器的完整排布：classic 额外带内联 `maxWidth` / `columnGap`（成块列数与
  * 间距都随站点设置变，类名拼不出来），compact / wide 只有类名。
  *
  * 普通模式（`LinkGrid`）与首页编辑模式（home-edit-board.tsx 的看板网格）都必须走
@@ -299,7 +302,7 @@ export function LinkGrid({
   linkStyle?: LinkStyle;
   /** 是否渲染网址行（站点设置 `showUrl`）；缺省开 */
   showUrl?: boolean;
-  /** classic 每行上限（站点设置 `columns`，1–12）；缺省/0 回默认值 */
+  /** classic 成块列数（站点设置 `columns`，1–12）；缺省/0 回默认值 */
   columns?: number;
 }) {
   const Tile =
@@ -363,7 +366,7 @@ export function CategorySection({
   linkStyle?: LinkStyle;
   /** 是否渲染网址行（站点设置 `showUrl`）；缺省开 */
   showUrl?: boolean;
-  /** classic 每行上限（站点设置 `columns`，1–12）；缺省/0 回默认值 */
+  /** classic 成块列数（站点设置 `columns`，1–12）；缺省/0 回默认值 */
   columns?: number;
 }) {
   return (
