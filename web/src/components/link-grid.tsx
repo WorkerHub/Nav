@@ -2,6 +2,7 @@ import { FadeIn, GlassCard } from "@/components/glass";
 import { SiteIcon } from "@/components/site-icon";
 import { safeHost } from "@/lib/icons";
 import type { LinkStyle, SiteCategory, SiteLink } from "@/lib/types";
+import { cn } from "@/lib/utils";
 
 /**
  * 链接网格（站点设置 `linkStyle` 决定呈现形态，全站统一、访客不可切）。
@@ -16,8 +17,9 @@ import type { LinkStyle, SiteCategory, SiteLink } from "@/lib/types";
  *
  * 首页编辑模式（home-edit-board.tsx）复用同一套「砖的外观」：`linkTileClassName`
  * 给出三档外壳类、`LinkTileContent` 给出内层 DOM（图标 / 名称 / 域名）。正常模式
- * 仍把外壳挂在 `<a>` 上、DOM 与类名保持改动前一致；编辑模式把它挂在一个
- * `role="button"` 的 `<div>` 上（单击打开编辑弹窗，不跳转）。
+ * 仍把外壳挂在 `<a>` 上、DOM 与类名保持改动前一致；编辑模式把它挂在一个撑满网格
+ * 格子的 `<button>` 上（单击打开编辑弹窗，不跳转），并传 `singleLine` 让名称与网址
+ * 各占一行、超长截断省略号（悬停 `title` 看全称）。
  */
 
 /** 每档的网格列数（只有列数与间距不同，条目形状见下方各自的组件）。 */
@@ -43,14 +45,28 @@ export function linkTileClassName(linkStyle: LinkStyle): string {
   return "glass glass-hover group flex h-full flex-col items-center gap-2 rounded-2xl px-2 py-4 text-center";
 }
 
-/** 砖的内层内容（不含外壳）：三档各自的图标尺寸、名称与域名排布。 */
+/**
+ * 砖的内层内容（不含外壳）：三档各自的图标尺寸、名称与域名排布。
+ *
+ * `singleLine`：编辑模式的砖宽高由网格给定（home-edit-board.tsx 把外壳撑满格子），
+ * 名称与网址各占一行、超长截断省略号，并补 `title` 让悬停可看全称；普通模式的砖
+ * 仍按改动前的排布（classic 名称最多两行），不传该 prop 即可。
+ */
 export function LinkTileContent({
   link,
   linkStyle,
+  singleLine = false,
 }: {
   link: SiteLink;
   linkStyle: LinkStyle;
+  /** 名称单行截断 + 名称/网址补 title（编辑模式用；普通模式保持原排布） */
+  singleLine?: boolean;
 }) {
+  const host = safeHost(link.url);
+  // 只在编辑模式补 title：普通模式的 DOM 与提示行为保持改动前一致
+  const titleAttr = singleLine ? link.title : undefined;
+  const hostAttr = singleLine ? host : undefined;
+
   if (linkStyle === "compact") {
     return (
       <>
@@ -60,7 +76,9 @@ export function LinkTileContent({
           iconUrl={link.iconUrl}
           size={20}
         />
-        <span className="min-w-0 flex-1 truncate text-sm">{link.title}</span>
+        <span title={titleAttr} className="min-w-0 flex-1 truncate text-sm">
+          {link.title}
+        </span>
       </>
     );
   }
@@ -74,11 +92,17 @@ export function LinkTileContent({
           size={36}
         />
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-medium text-foreground/90">
+          <span
+            title={titleAttr}
+            className="block truncate text-sm font-medium text-foreground/90"
+          >
             {link.title}
           </span>
-          <span className="block truncate text-xs text-muted-foreground">
-            {safeHost(link.url)}
+          <span
+            title={hostAttr}
+            className="block truncate text-xs text-muted-foreground"
+          >
+            {host}
           </span>
         </span>
       </>
@@ -92,11 +116,20 @@ export function LinkTileContent({
         iconUrl={link.iconUrl}
         size={44}
       />
-      <span className="line-clamp-2 w-full text-sm font-medium text-foreground/90">
+      <span
+        title={titleAttr}
+        className={cn(
+          "w-full text-sm font-medium text-foreground/90",
+          singleLine ? "truncate" : "line-clamp-2",
+        )}
+      >
         {link.title}
       </span>
-      <span className="w-full truncate text-xs text-muted-foreground">
-        {safeHost(link.url)}
+      <span
+        title={hostAttr}
+        className="w-full truncate text-xs text-muted-foreground"
+      >
+        {host}
       </span>
     </>
   );
