@@ -43,7 +43,7 @@ function iconBox(link: HTMLElement, linkStyle: LinkStyle): HTMLElement {
 }
 
 describe("LinkGrid：三档样式", () => {
-  it("缺省（不传 linkStyle）= classic：图标上、名称下、域名小字，列数沿现状", () => {
+  it("缺省（不传 linkStyle）= classic：图标上、名称下、域名小字，列数用默认梯度", () => {
     const { container } = render(<LinkGrid links={links} />);
 
     expect(grid(container)).toHaveClass(
@@ -172,6 +172,100 @@ describe("CategorySection：把样式透传给网格，锚点偏移随顶栏移�
 
     expect(grid(container)).toHaveClass("lg:grid-cols-3");
     expect(screen.getByRole("link", { name: /GitHub/ })).toHaveClass("glass");
+  });
+});
+
+describe("LinkGrid：classic 列数（站点设置 columns）", () => {
+  const DEFAULT_GRADIENT = [
+    "grid-cols-4",
+    "sm:grid-cols-5",
+    "md:grid-cols-6",
+    "lg:grid-cols-7",
+    "xl:grid-cols-8",
+  ];
+
+  it("columns=5：桌面 5 列，窄屏按梯度递减（2 / 2 / 3 / 4 / 5）", () => {
+    const { container } = render(<LinkGrid links={links} columns={5} />);
+
+    expect(grid(container)).toHaveClass(
+      "grid-cols-2",
+      "sm:grid-cols-2",
+      "md:grid-cols-3",
+      "lg:grid-cols-4",
+      "xl:grid-cols-5",
+    );
+    expect(grid(container)).not.toHaveClass("xl:grid-cols-8");
+  });
+
+  it("两个边界：columns=1 全档单列；columns=12 桌面 12、lg 封顶 10、手机保底 4", () => {
+    const single = render(<LinkGrid links={links} columns={1} />);
+    expect(grid(single.container)).toHaveClass(
+      "grid-cols-1",
+      "sm:grid-cols-1",
+      "md:grid-cols-1",
+      "lg:grid-cols-1",
+      "xl:grid-cols-1",
+    );
+    single.unmount();
+
+    const max = render(<LinkGrid links={links} columns={12} />);
+    expect(grid(max.container)).toHaveClass(
+      "grid-cols-4",
+      "sm:grid-cols-6",
+      "md:grid-cols-8",
+      "lg:grid-cols-10",
+      "xl:grid-cols-12",
+    );
+    max.unmount();
+  });
+
+  it("columns=0 / 不传：沿用默认梯度（与改动前逐字一致）", () => {
+    const zero = render(<LinkGrid links={links} columns={0} />);
+    expect(grid(zero.container)).toHaveClass(...DEFAULT_GRADIENT);
+    zero.unmount();
+
+    const none = render(<LinkGrid links={links} />);
+    expect(grid(none.container)).toHaveClass(...DEFAULT_GRADIENT);
+  });
+
+  it("compact / wide 不看 columns：传了也不改变各自排法", () => {
+    const compact = render(
+      <LinkGrid links={links} linkStyle="compact" columns={5} />,
+    );
+    expect(grid(compact.container)).toHaveClass(
+      "grid-cols-2",
+      "sm:grid-cols-3",
+      "md:grid-cols-4",
+      "lg:grid-cols-5",
+    );
+    compact.unmount();
+
+    const wide = render(
+      <LinkGrid links={links} linkStyle="wide" columns={12} />,
+    );
+    expect(grid(wide.container)).toHaveClass(
+      "grid-cols-1",
+      "sm:grid-cols-2",
+      "lg:grid-cols-3",
+    );
+    expect(grid(wide.container)).not.toHaveClass("xl:grid-cols-12");
+  });
+
+  it("CategorySection 把 columns 透传给网格", () => {
+    const category: SiteCategory = {
+      id: "cat-dev",
+      name: "开发",
+      icon: null,
+      sceneId: "s_default",
+      sortOrder: 0,
+      links,
+    };
+
+    const { container } = render(
+      <CategorySection category={category} columns={5} />,
+    );
+
+    expect(grid(container)).toHaveClass("xl:grid-cols-5");
   });
 });
 

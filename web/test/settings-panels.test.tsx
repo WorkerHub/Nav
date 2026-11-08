@@ -380,3 +380,60 @@ describe("SettingsPanel：站点主题已删除", () => {
     expect(updateSettingsMock.mock.calls[0][0]).not.toHaveProperty("theme");
   });
 });
+
+describe("SettingsPanel：列数字段只在 classic 下显示", () => {
+  beforeEach(() => {
+    uploadMock.mockReset();
+    updateSettingsMock.mockReset();
+    updateSettingsMock.mockImplementation(async (input) => ({
+      ...baseSettings,
+      ...input,
+    }));
+  });
+
+  it("classic（缺省）：显示「列数（1–12）」并回显已有值", () => {
+    render(<SettingsPanel settings={baseSettings} onChanged={vi.fn()} />);
+
+    expect(screen.getByLabelText("列数（1–12）")).toHaveValue(6);
+  });
+
+  it("linkStyle=compact / wide：字段整块隐藏、不留说明文字", () => {
+    for (const linkStyle of ["compact", "wide"] as const) {
+      const { unmount } = render(
+        <SettingsPanel
+          settings={{ ...baseSettings, linkStyle }}
+          onChanged={vi.fn()}
+        />,
+      );
+
+      expect(screen.queryByLabelText("列数（1–12）")).toBeNull();
+      expect(screen.queryByText("列数（1–12）")).toBeNull();
+      unmount();
+    }
+  });
+
+  it("切到 compact 再切回 classic：字段回来、仍是原值；compact 下保存仍提交原列数", async () => {
+    const user = userEvent.setup();
+    render(<SettingsPanel settings={baseSettings} onChanged={vi.fn()} />);
+
+    await user.click(screen.getByRole("combobox", { name: "选择链接样式" }));
+    await user.click(
+      screen.getByRole("option", { name: "紧凑（横排单行，无卡片底）" }),
+    );
+    expect(screen.queryByLabelText("列数（1–12）")).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "保存设置" }));
+    await waitFor(() => expect(updateSettingsMock).toHaveBeenCalledTimes(1));
+    // 值保留：隐藏期间不会被改写/清空，compact 档只是不展示
+    expect(updateSettingsMock.mock.calls[0][0]).toMatchObject({
+      linkStyle: "compact",
+      columns: 6,
+    });
+
+    await user.click(screen.getByRole("combobox", { name: "选择链接样式" }));
+    await user.click(
+      screen.getByRole("option", { name: "经典（图标上、名称下）" }),
+    );
+    expect(screen.getByLabelText("列数（1–12）")).toHaveValue(6);
+  });
+});

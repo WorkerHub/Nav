@@ -359,19 +359,26 @@ export function SettingsPanel({
           value={form.logoUrl ?? ""}
           onChange={(logoUrl) => setForm({ ...form, logoUrl })}
         />
-        <div className="grid max-w-[10rem] gap-2">
-          <Label htmlFor="set-cols">列数（1–12）</Label>
-          <Input
-            id="set-cols"
-            type="number"
-            min={1}
-            max={12}
-            value={form.columns}
-            onChange={(e) =>
-              setForm({ ...form, columns: Number(e.target.value) })
-            }
-          />
-        </div>
+        {/*
+          列数只对 classic 档有意义（compact / wide 的排法固定，#24 口径）：非 classic 时
+          整块隐藏、不加说明文字。`form.columns` 始终留在表单里（保存照旧整包提交），
+          所以隐藏期间的值不会丢，切回 classic 输入框即回显原值。
+        */}
+        {form.linkStyle === "classic" && (
+          <div className="grid max-w-[10rem] gap-2">
+            <Label htmlFor="set-cols">列数（1–12）</Label>
+            <Input
+              id="set-cols"
+              type="number"
+              min={1}
+              max={12}
+              value={form.columns}
+              onChange={(e) =>
+                setForm({ ...form, columns: Number(e.target.value) })
+              }
+            />
+          </div>
+        )}
         <div className="flex items-start justify-between gap-4 rounded-lg border p-3">
           <div className="grid gap-1">
             <Label htmlFor="set-search-new-tab">搜索在新标签页打开</Label>

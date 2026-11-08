@@ -167,7 +167,54 @@ describe("PublicPage 头部：时钟块取代顶栏", () => {
     const link = screen.getByRole("link", { name: /GitHub/ });
     expect(link).toHaveClass("glass");
     expect(link).toHaveTextContent("github.com");
-    expect(link.parentElement?.parentElement).toHaveClass("xl:grid-cols-8");
+    // fixture 的 columns=6 现在真的生效（classic 桌面列数取站点设置）
+    expect(link.parentElement?.parentElement).toHaveClass("xl:grid-cols-6");
+  });
+
+  it("settings.columns=5（classic）：首页桌面 5 列，窄屏按梯度递减", () => {
+    seedSite({ ...baseSettings, columns: 5 });
+    render(<PublicPage onOpenAdmin={vi.fn()} />);
+
+    const grid = screen.getByRole("link", { name: /GitHub/ }).parentElement
+      ?.parentElement;
+    expect(grid).toHaveClass(
+      "grid-cols-2",
+      "sm:grid-cols-2",
+      "md:grid-cols-3",
+      "lg:grid-cols-4",
+      "xl:grid-cols-5",
+    );
+    expect(grid).not.toHaveClass("xl:grid-cols-8");
+  });
+
+  it("settings.columns=0（未配置）：沿用默认梯度（桌面 8 列）", () => {
+    seedSite({ ...baseSettings, columns: 0 });
+    render(<PublicPage onOpenAdmin={vi.fn()} />);
+
+    const grid = screen.getByRole("link", { name: /GitHub/ }).parentElement
+      ?.parentElement;
+    expect(grid).toHaveClass(
+      "grid-cols-4",
+      "sm:grid-cols-5",
+      "md:grid-cols-6",
+      "lg:grid-cols-7",
+      "xl:grid-cols-8",
+    );
+  });
+
+  it("compact / wide 不看 columns：各自排法不受影响", () => {
+    seedSite({ ...baseSettings, columns: 5, linkStyle: "compact" });
+    const compact = render(<PublicPage onOpenAdmin={vi.fn()} />);
+    expect(
+      screen.getByRole("link", { name: /GitHub/ }).parentElement?.parentElement,
+    ).toHaveClass("lg:grid-cols-5");
+    compact.unmount();
+
+    seedSite({ ...baseSettings, columns: 12, linkStyle: "wide" });
+    render(<PublicPage onOpenAdmin={vi.fn()} />);
+    expect(
+      screen.getByRole("link", { name: /GitHub/ }).parentElement?.parentElement,
+    ).toHaveClass("lg:grid-cols-3");
   });
 
   it("settings.showUrl=false：普通模式卡片不渲染域名，名称与跳转不变", () => {

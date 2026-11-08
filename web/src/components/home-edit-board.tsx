@@ -25,8 +25,8 @@ import { Plus, X } from "lucide-react";
 import { FadeIn } from "@/components/glass";
 import {
   CategoryHeading,
-  LINK_GRID_CLASS,
   LinkTileContent,
+  linkGridClassName,
   linkTileClassName,
 } from "@/components/link-grid";
 import { cn } from "@/lib/utils";
@@ -53,7 +53,8 @@ import type { LinkStyle, SiteCategory, SiteLink } from "@/lib/types";
  * 触屏：`TouchSensor` 长按 250ms 才激活（普通滑动照常滚动页面），`MouseSensor`
  * 位移 6px 激活（单击不被吃掉）。拖拽覆盖层用 dnd-kit 原生 `DragOverlay`。
  *
- * 尺寸口径（2026-11-08）：砖的格子由 `LINK_GRID_CLASS` 给出（与普通模式同一个网格），
+ * 尺寸口径（2026-11-08）：砖的格子由 `linkGridClassName(linkStyle, columns)` 给出
+ * （与普通模式同一个网格，classic 的列数取站点设置 `columns`），
  * 砖壳必须 **撑满格子** —— `<button>` 的 `width: auto` 在 Chrome 里按内容收缩，
  * 不补 `w-full` 的话长名称/长网址的砖会比旁边的宽、甚至溢出格子。撑满后名称与网址
  * 单行截断（`LinkTileContent` 的 `singleLine`）、悬停 `title` 看全称，同档砖因此
@@ -307,6 +308,7 @@ function AddLinkTile({
 export function HomeEditBoard({
   categories,
   linkStyle,
+  columns,
   privateCategories,
   onEditLink,
   onRemoveLink,
@@ -316,6 +318,8 @@ export function HomeEditBoard({
   /** 当前场景的分类（组内链接已按 sortOrder 排好，与正常模式同源） */
   categories: readonly SiteCategory[];
   linkStyle: LinkStyle;
+  /** classic 桌面列数（站点设置 `columns`，1–12）；缺省/0 用默认梯度，与普通模式同源 */
+  columns?: number;
   /** 私有分类 id（显示「私有」徽标，与正常模式同口径） */
   privateCategories: ReadonlySet<string>;
   onEditLink: (linkId: string) => void;
@@ -455,7 +459,7 @@ export function HomeEditBoard({
                   />
                 </EndDropTarget>
                 <SortableContext items={ids} strategy={rectSortingStrategy}>
-                  <div className={LINK_GRID_CLASS[linkStyle]}>
+                  <div className={linkGridClassName(linkStyle, columns)}>
                     {ids.map((id) => {
                       const link = linkById.get(id);
                       if (!link) return null;
