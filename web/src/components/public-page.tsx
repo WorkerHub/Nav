@@ -190,11 +190,11 @@ export function PublicPage({ onOpenAdmin }: { onOpenAdmin: () => void }) {
 
       {/*
         正文：时钟块 → 搜索 → 分类区块。
-        底部留白 pb-96（384px）大于右下角坞的最大高度（场景组封顶 160 + 间距 8 +
-        按钮组「编辑/主题/后台/退出」188 = 356px，再加坞离底边的 16px）：滚到页面
-        底部时最后一行链接完整露出，不会被固定坞盖住。
+        底部收尾间距取分类间距的量级（pb-10 = 40px，与容器的 gap-10 同档）：滚到
+        页面底部时最后一行下方只留一档常规间距。右下角坞是最右侧 60px（right-4 +
+        w-11）的固定浮层，砖是成块居中、宽屏上并不与它重叠，所以不为它预留空白。
       */}
-      <main className="mx-auto flex max-w-7xl flex-col gap-10 px-4 pb-96 sm:px-8">
+      <main className="mx-auto flex max-w-7xl flex-col gap-10 px-4 pb-10 sm:px-8">
         <FadeIn className="pt-10 sm:pt-16">
           <SiteClock
             siteTitle={settings?.siteTitle ?? "我的导航"}

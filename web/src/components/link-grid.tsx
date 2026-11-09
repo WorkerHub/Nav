@@ -14,10 +14,10 @@ import { cn } from "@/lib/utils";
  * 链接网格（站点设置 `linkStyle` 决定呈现形态，全站统一、访客不可切）。
  *
  * 三档形状由 `resolveLinkStyle`（lib/link-style.ts）解析，缺省 classic：
- *  - classic：图标上、名称下、域名小字；砖是定宽定高的**卡片**（宽按 `tileSize`
- *    成块、高按同档图标盒与文字行数反推），图标盒固定占砖宽 60%；站点设置
- *    `columns`（1–12）是**成块列数**：桌面按这个数成块、整块居中，窄屏放不下
- *    整块时一行自然少放几块（0/未配置回默认 8）；
+ *  - classic：图标上、名称下、域名小字；砖是**正方形卡片**（边长按 `tileSize`
+ *    成块、高与宽相等，见 lib/grid-columns.ts），图标盒固定占边长的 46%，名称与
+ *    网址各单行截断；站点设置 `columns`（1–12）是**成块列数**：桌面按这个数成块、
+ *    整块居中，窄屏放不下整块时一行自然少放几块（0/未配置回默认 8）；
  *  - compact：24px 小图标左、15px 名称右（单行省略），透明无卡片底（只在悬停时
  *    给一层 5% 白底表示可点）、不显示域名；条目固定 240px，按 #35 的成块模型
  *    排布（整块居中、末行左对齐到满行列位）；
@@ -39,9 +39,10 @@ import { cn } from "@/lib/utils";
  *
  * 首页编辑模式（home-edit-board.tsx）复用同一套「砖的外观」：`linkTileClassName`
  * 给出三档外壳类、`LinkTileContent` 给出内层 DOM（图标 / 名称 / 域名）。正常模式
- * 仍把外壳挂在 `<a>` 上、DOM 与类名保持改动前一致；编辑模式把它挂在 `<button>` 上
- * （classic 是定宽定高的砖、compact / wide 撑满格子；单击打开编辑弹窗，不跳转），并传
- * `singleLine` 让名称与网址各占一行、超长截断省略号（悬停 `title` 看全称）。
+ * 仍把外壳挂在 `<a>` 上；编辑模式把它挂在 `<button>` 上（classic 是定边长的正方形
+ * 砖、compact / wide 撑满格子；单击打开编辑弹窗，不跳转）。classic 两模式都把名称与
+ * 网址各渲染一行、超长截断省略号并恒给 `title`（悬停看全称）；compact / wide 仍由
+ * `singleLine`（编辑模式）决定要不要补 `title`。
  *
  * compact 的排布模型（规格已定版）：条目固定 240px，容器是 **CSS 网格** ——
  * `repeat(auto-fill, 240px)` 的轨道数就是「成块列数」（floor((容宽 + gap) /
@@ -50,16 +51,16 @@ import { cn } from "@/lib/utils";
  * 是同一几何结果，但 compact 的列数不来自站点设置，用 CSS 自动排即可，无需
  * 测量容器宽度（也就没有首帧闪动与 jsdom 量不到的测试难题）。
  *
- * classic 的排布模型（规格已定版）：定宽定高的砖（宽度按站点设置 `tileSize`
- * 从 `CLASSIC_TILE_WIDTH_CLASS` 取、高度从 `CLASSIC_TILE_HEIGHT_CLASS` 取，都是静态类）
- * + flex 换行 + **整块居中 + 末行左对齐**。
+ * classic 的排布模型（规格已定版）：**正方形**砖（边长按站点设置 `tileSize` 从
+ * `CLASSIC_TILE_WIDTH_CLASS` 取、高度从 `CLASSIC_TILE_HEIGHT_CLASS` 取，两者数值
+ * 相同、都是静态类）+ flex 换行 + **整块居中 + 末行左对齐**。
  * `columns` 是成块列数，行组的最大宽度由它与当档砖宽算出（见 lib/grid-columns.ts
  * 的 `classicGridMetrics`）；窄屏放不下整块时一行自然少放几块。砖再也不会被容器
  * 拉宽，所以列数设小时看到的是「同样的砖、更少更松」，而不是大宽矩形。
  *
- * 砖高为何不与宽相等：图标盒固定占砖宽 60%，正方形装不下「图标 + 名称 + 网址」
- * （小块只剩不到 1px 余量，文字会被 flex 压扁），所以高度单独定档，见
- * lib/grid-columns.ts 的 `CLASSIC_TILE_HEIGHTS`。宽度仍是成块排布的唯一依据。
+ * 砖内只装「图标盒 + 名称一行 + 网址一行」：名称与网址在正方形里一律单行截断，所以
+ * 砖高不会再被文字撑开；图标盒跟着缩到边长的 46%，逐档都留了正余量（测算见
+ * `CLASSIC_ICON_BOX` 与 `CLASSIC_TILE_DENSITY`）。宽度仍是成块排布的唯一依据。
  */
 
 /**
@@ -114,19 +115,23 @@ export function linkGridLayout(
 }
 
 /**
- * classic 图标盒三档边长（px）：固定取砖宽的 60%，三档同比例（图标因此随砖等比缩放）。
- * 141.5 × 0.6 = 84.9 → 85；113 × 0.6 = 67.8 → 68；92 × 0.6 = 55.2 → 55。
+ * classic 图标盒三档边长（px）：固定取砖边长（= 正方形边长）的 46%，三档同比例
+ * （图标因此随砖等比缩放）：141.5 × 0.46 = 65.1 → 65；113 × 0.46 = 52.0 → 52；
+ * 92 × 0.46 = 42.3 → 42。
+ *
+ * 46% 是「正方形里装得下图标 + 名称一行 + 网址一行」的上限附近：按 1px 边框×2 +
+ * 上下内距×2 + 图标盒 + 2×gap + 名称行 + 网址行 算，三档余量分别为 6.5 / 3 / 4px。
  */
 export const CLASSIC_ICON_BOX: Record<TileSize, number> = {
-  large: 85,
-  medium: 68,
-  small: 55,
+  large: 65,
+  medium: 52,
+  small: 42,
 };
 
 /**
  * 图标盒边长（px，按链接样式分档）：同一档内所有链接共用一个定值，图标盒因此
  * 全站同档同尺寸。compact 24（条目放大到 240px 宽后的点选口径）、wide 56（图标在
- * 宽卡里垂直居中，卡高 ≈ 56 + 上下内距 + 边框 ≈ 82px）；classic 取大档的 60%
+ * 宽卡里垂直居中，卡高 ≈ 56 + 上下内距 + 边框 ≈ 82px）；classic 取大档的 46%
  * 图标盒边长（逐档值见 `CLASSIC_ICON_BOX`），不改图标本身的圆角与背景。
  */
 export const LINK_ICON_BOX: Record<LinkStyle, number> = {
@@ -138,9 +143,13 @@ export const LINK_ICON_BOX: Record<LinkStyle, number> = {
 /**
  * classic 砖内密度（按档）：gap / 内距与名称、网址的静态字号类。
  *
- * 数值与砖高（`CLASSIC_TILE_HEIGHTS`）配套：砖高按「图标盒 + 两行名称 + 一行网址」
- * 反推，所以名称仍可折两行、字号与间距三档同口径。字号类必须是字面量（Tailwind
- * 只扫源码字面量），不能按档动态拼。
+ * 与正方形边长配套：砖内固定三行（图标盒 + 名称一行 + 网址一行），所以内距随砖缩小
+ * 同步收紧。逐档验算（1px 边框×2 + 上下内距×2 + 图标盒 + 2×gap + 名称行 + 网址行
+ * ≤ 边长）：
+ * large 2 + 16 + 65 + 16 + 20 + 16 = 135 ≤ 141.5（余 6.5）；
+ * medium 2 + 12 + 52 + 12 + 16 + 16 = 110 ≤ 113（余 3）；
+ * small 2 + 4 + 42 + 8 + 16 + 16 = 88 ≤ 92（余 4）。
+ * 字号类必须是字面量（Tailwind 只扫源码字面量），不能按档动态拼。
  */
 const CLASSIC_TILE_DENSITY: Record<
   TileSize,
@@ -148,7 +157,7 @@ const CLASSIC_TILE_DENSITY: Record<
 > = {
   large: {
     gap: "gap-2",
-    padding: "px-2 py-3",
+    padding: "px-2 py-2",
     title: "text-sm",
     url: "text-xs",
   },
@@ -171,7 +180,7 @@ const CLASSIC_TILE_DENSITY: Record<
  * 两处必须同源，避免「编辑模式一进去样式就变」。
  *
  * classic 的边长与内距随站点设置 `tileSize` 变；compact / wide 排法固定，
- * 忽略第二个参数。classic 的宽决定成块排布，高随图标盒（砖宽 60%）定档。
+ * 忽略第二个参数。classic 是正方形（高 = 宽），宽度决定成块排布。
  */
 export function linkTileClassName(
   linkStyle: LinkStyle,
@@ -234,9 +243,9 @@ function LinkIcon({
 /**
  * 砖的内层内容（不含外壳）：三档各自的图标尺寸、名称与域名排布。
  *
- * `singleLine`：编辑模式的砖尺寸由砖壳自己给定（classic 定宽定高的砖、compact / wide
- * 撑满格子），名称与网址各占一行、超长截断省略号，并补 `title` 让悬停可看全称；
- * 普通模式的砖仍按改动前的排布（classic 名称最多两行），不传该 prop 即可。
+ * `singleLine`：编辑模式下 compact / wide 名称与网址各占一行、超长截断省略号，
+ * 并补 `title` 让悬停可看全称。classic 不受它影响：正方形只够「名称一行 + 网址
+ * 一行」，两模式都单行截断且恒给 `title`。
  *
  * `showUrl`：普通模式的「显示网址」开关（站点设置 `showUrl`）；编辑模式不传，恒显示。
  */
@@ -257,7 +266,7 @@ export function LinkTileContent({
   tileSize?: TileSize;
 }) {
   const host = safeHost(link.url);
-  // 只在编辑模式补 title：普通模式的 DOM 与提示行为保持改动前一致
+  // compact / wide 只在编辑模式补 title；classic 恒给（正方形里名称与网址必然单行截断）
   const titleAttr = singleLine ? link.title : undefined;
   const hostAttr = singleLine ? host : undefined;
 
@@ -302,18 +311,17 @@ export function LinkTileContent({
     <>
       <LinkIcon link={link} linkStyle="classic" tileSize={tileSize} />
       <span
-        title={titleAttr}
+        title={link.title}
         className={cn(
-          "w-full font-medium text-foreground/90",
+          "w-full truncate font-medium text-foreground/90",
           density.title,
-          singleLine ? "truncate" : "line-clamp-2",
         )}
       >
         {link.title}
       </span>
       {showUrl && (
         <span
-          title={hostAttr}
+          title={host}
           className={cn("w-full truncate text-muted-foreground", density.url)}
         >
           {host}

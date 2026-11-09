@@ -128,10 +128,12 @@ describe("PublicPage 头部：时钟块取代顶栏", () => {
     expect(screen.getByText(/^\d{2}:\d{2}$/)).toBeInTheDocument();
   });
 
-  it("正文底部留白足够让最后一行链接超出固定坞（pb-96），锚点偏移调小（scroll-mt-6）", () => {
+  it("正文底部留白收敛到分类间距量级（pb-10 = 40px），锚点偏移调小（scroll-mt-6）", () => {
     render(<PublicPage onOpenAdmin={vi.fn()} />);
 
-    expect(document.querySelector("main")).toHaveClass("pb-96");
+    const main = document.querySelector("main");
+    expect(main).toHaveClass("pb-10");
+    expect(main).not.toHaveClass("pb-96");
     const section = document.getElementById("cat-cat-dev");
     expect(section).toHaveClass("scroll-mt-6");
     expect(section).not.toHaveClass("scroll-mt-24");
@@ -192,7 +194,7 @@ describe("PublicPage 头部：时钟块取代顶栏", () => {
     expect(grid?.className).not.toContain("grid-cols");
     expect(screen.getByRole("link", { name: /GitHub/ })).toHaveClass(
       "w-[141.5px]",
-      "h-[185px]",
+      "h-[141.5px]",
     );
   });
 
@@ -205,24 +207,24 @@ describe("PublicPage 头部：时钟块取代顶栏", () => {
     expect(grid).toHaveStyle({ maxWidth: "1468px" });
   });
 
-  it("settings.tileSize 三档：行组与砖尺寸按档变化；缺省回 large", () => {
+  it("settings.tileSize 三档：行组与正方形边长按档变化；缺省回 large", () => {
     const cases = [
       {
         tileSize: "large" as const,
         px: "141.5",
-        h: "185",
+        h: "141.5",
         maxWidth: "1468px",
       },
       {
         tileSize: "medium" as const,
         px: "113",
-        h: "144",
+        h: "113",
         maxWidth: "1240px",
       },
       {
         tileSize: "small" as const,
         px: "92",
-        h: "119",
+        h: "92",
         maxWidth: "1072px",
       },
     ];
@@ -235,6 +237,8 @@ describe("PublicPage 头部：时钟块取代顶栏", () => {
       expect(link.parentElement?.parentElement).toHaveStyle({
         maxWidth: c.maxWidth,
       });
+      // 正方形：宽高类同值
+      expect(c.h).toBe(c.px);
       expect(link).toHaveClass(`w-[${c.px}px]`, `h-[${c.h}px]`);
       unmount();
     }
@@ -244,7 +248,7 @@ describe("PublicPage 头部：时钟块取代顶栏", () => {
     render(<PublicPage onOpenAdmin={vi.fn()} />);
     expect(screen.getByRole("link", { name: /GitHub/ })).toHaveClass(
       "w-[141.5px]",
-      "h-[185px]",
+      "h-[141.5px]",
     );
   });
 

@@ -66,10 +66,10 @@ export interface SearchEngine {
 export type LinkStyle = "classic" | "compact" | "wide";
 
 /**
- * classic 砖块尺寸（站点设置 `tileSize`）：`large`（砖宽 141.5px）/`medium`（113px）/
- * `small`（92px）。缺省 `large`；与 `linkStyle` 同为全站统一、访客不可切。
- * 这里报的是**砖宽**（成块排布用）；砖高随同档图标盒与文字行数一起定档，
- * 见 lib/grid-columns.ts 的 `CLASSIC_TILE_HEIGHTS`。
+ * classic 砖块尺寸（站点设置 `tileSize`）：`large`（边长 141.5px）/`medium`（113px）/
+ * `small`（92px），砖是正方形（高 = 宽）。缺省 `large`；与 `linkStyle` 同为全站统一、访客不可切。
+ * 这里报的是**边长**（正方形，成块排布用）：砖高与砖宽相等，见 lib/grid-columns.ts
+ * 的 `CLASSIC_TILE_SIZES` 与 `CLASSIC_TILE_HEIGHT_CLASS`。
  */
 export type TileSize = "large" | "medium" | "small";
 

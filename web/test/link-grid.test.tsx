@@ -76,12 +76,13 @@ describe("LinkGrid：三档样式", () => {
 
     const link = screen.getByRole("link", { name: /GitHub/ });
     expect(link).toHaveClass("glass", "flex-col", "text-center");
-    // 砖：宽高固定（与常量同源，改了任一处这条会挂）
+    // 砖：正方形（宽高类同值，与常量同源，改了任一处这条会挂）
     expect(link).toHaveClass(
       CLASSIC_TILE_WIDTH_CLASS.large,
       CLASSIC_TILE_HEIGHT_CLASS.large,
       "shrink-0",
     );
+    expect(CLASSIC_TILE_HEIGHT_CLASS.large).toBe("h-[141.5px]");
     expect(link).not.toHaveClass("h-full");
     expect(link).not.toHaveClass("w-full");
     // FadeIn 那层是 flex item，不能把砖压小
@@ -91,7 +92,7 @@ describe("LinkGrid：三档样式", () => {
       "width",
       String(CLASSIC_ICON_BOX.large),
     );
-    // 图标在固定 85×85（砖宽 60%）的盒子里等比缩放、填满盒子
+    // 图标在固定 65×65（边长 46%）的盒子里等比缩放、填满盒子
     const box = iconBox(link, "classic");
     expect(box).toHaveStyle({
       width: `${CLASSIC_ICON_BOX.large}px`,
@@ -331,25 +332,25 @@ describe("LinkGrid：classic 成块列数（站点设置 columns）", () => {
 });
 
 describe("LinkGrid：classic 砖块尺寸三档（tileSize）", () => {
-  it("三档的砖宽、图标盒、名称/网址字号与行组宽度同步变化", () => {
+  it("三档都是正方形，图标盒、名称/网址字号与行组宽度同步变化", () => {
     const cases = [
       {
         tileSize: "large" as const,
         px: 141.5,
         maxWidth: "1468px",
-        icon: 85,
-        height: 185,
+        icon: 65,
+        height: 141.5,
         titleClass: ["text-sm"],
         urlClass: ["text-xs"],
         gap: "gap-2",
-        padding: "py-3",
+        padding: "py-2",
       },
       {
         tileSize: "medium" as const,
         px: 113,
         maxWidth: "1240px",
-        icon: 68,
-        height: 144,
+        icon: 52,
+        height: 113,
         titleClass: ["text-[13px]", "leading-4"],
         urlClass: ["text-xs"],
         gap: "gap-1.5",
@@ -359,8 +360,8 @@ describe("LinkGrid：classic 砖块尺寸三档（tileSize）", () => {
         tileSize: "small" as const,
         px: 92,
         maxWidth: "1072px",
-        icon: 55,
-        height: 119,
+        icon: 42,
+        height: 92,
         titleClass: ["text-xs"],
         urlClass: ["text-[11px]", "leading-4"],
         gap: "gap-1",
@@ -369,6 +370,8 @@ describe("LinkGrid：classic 砖块尺寸三档（tileSize）", () => {
     ];
 
     for (const c of cases) {
+      // 正方形：高恒等于宽
+      expect(c.height).toBe(c.px);
       const { unmount } = render(
         <LinkGrid links={links} tileSize={c.tileSize} />,
       );
@@ -391,6 +394,21 @@ describe("LinkGrid：classic 砖块尺寸三档（tileSize）", () => {
 
       unmount();
     }
+  });
+
+  it("名称与网址在正方形里各占一行（truncate，不再折行）并恒给 title 看全称", () => {
+    const { container } = render(<LinkGrid links={links} />);
+
+    const long = screen.getByText("MDN Web Docs 前端文档与参考手册");
+    expect(long).toHaveClass("truncate", "w-full");
+    expect(long).not.toHaveClass("line-clamp-2");
+    expect(long).toHaveAttribute("title", "MDN Web Docs 前端文档与参考手册");
+
+    const host = screen.getByText("developer.mozilla.org");
+    expect(host).toHaveClass("truncate");
+    expect(host).toHaveAttribute("title", "developer.mozilla.org");
+    // 普通模式（未传 singleLine）同样单行截断 + 有 title
+    expect(grid(container)).toHaveClass("flex-wrap");
   });
 
   it("CategorySection 把 tileSize 透传给容器（medium 8 列 = 1240px）", () => {
@@ -419,7 +437,7 @@ describe("LinkGrid：classic 砖块尺寸三档（tileSize）", () => {
     );
     expect(screen.getByRole("link", { name: /GitHub/ })).not.toHaveClass(
       "w-[92px]",
-      "h-[119px]",
+      "h-[92px]",
     );
     compact.unmount();
 
@@ -429,7 +447,7 @@ describe("LinkGrid：classic 砖块尺寸三档（tileSize）", () => {
     expect(grid(wide.container)).toHaveClass(WIDE_GRID_COLUMNS);
     expect(screen.getByRole("link", { name: /GitHub/ })).not.toHaveClass(
       "w-[113px]",
-      "h-[144px]",
+      "h-[113px]",
     );
   });
 });
@@ -441,6 +459,8 @@ describe("LinkGrid：显示网址开关（showUrl，缺省开）", () => {
     const link = screen.getByRole("link", { name: /GitHub/ });
     expect(link).toHaveTextContent("GitHub");
     expect(link).not.toHaveTextContent("github.com");
+    // 只剩图标盒 + 名称两个子元素：网址行整块不渲染，不留空行把内容顶偏
+    expect(link.children).toHaveLength(2);
   });
 
   it("wide 档 showUrl=false：右侧只剩名称一行，域名行不渲染、不占位", () => {
