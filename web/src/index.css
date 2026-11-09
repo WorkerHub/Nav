@@ -47,6 +47,31 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/*
+ * 编辑模式砖块的 iOS 式抖动（home-edit-board.tsx 用 `animate-nav-tile-jiggle`）：
+ * 绕砖自身中心摆动 ±1.2°，单程 0.18s —— 配 `alternate` 就是完整往返 0.36s，
+ * `ease-in-out` 让两端自然减速，得到钟摆式的手感。每块砖的相位与周期由内联
+ * `animation-delay` / `animation-duration` 打散（见 `tileJiggleStyle`），所以不会
+ * 整齐划一地同相位摆。
+ *
+ * 关键帧只动单一变换属性 `rotate`，不写 `transform: rotate(...)`：砖壳的
+ * `.glass-hover:hover` 用 `transform: translateY(-1px)` 做上浮、dnd-kit 的拖拽
+ * 位移又挂在它的父层，三者互不覆盖。rotate 同样走合成层，不引起任何布局位移。
+ */
+@theme {
+  --animate-nav-tile-jiggle: nav-tile-jiggle 0.18s ease-in-out infinite
+    alternate;
+
+  @keyframes nav-tile-jiggle {
+    from {
+      rotate: -1.2deg;
+    }
+    to {
+      rotate: 1.2deg;
+    }
+  }
+}
+
 :root {
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
@@ -214,5 +239,10 @@
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+
+  /* 系统要求减少动态效果：编辑模式的砖块不抖，其余行为不变 */
+  .animate-nav-tile-jiggle {
+    animation: none;
   }
 }
