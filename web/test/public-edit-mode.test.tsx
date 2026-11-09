@@ -262,6 +262,38 @@ describe("进入 / 退出编辑模式", () => {
     expect(screen.queryByRole("button", { name: "删除 GitHub" })).toBeNull();
   });
 
+  it("编辑模式下链接砖与「+」砖都抖、相位各自错开；退出后一个都不留", async () => {
+    const user = userEvent.setup();
+    const { container } = renderPage();
+    await enterEdit(user);
+
+    const tiles = [
+      screen.getByRole("button", { name: "GitHub" }),
+      screen.getByRole("button", { name: "MDN" }),
+      screen.getByRole("button", { name: "向「开发」新增链接" }),
+      // 「空」分类只有这块「+」砖：它空/非空都照抖
+      screen.getByRole("button", { name: "向「空」新增链接" }),
+    ];
+    const delays = new Set<string>();
+    for (const tile of tiles) {
+      expect(tile).toHaveClass("animate-nav-tile-jiggle");
+      expect(tile.style.animationDelay).toMatch(/^-\d+ms$/);
+      expect(["160ms", "180ms", "200ms"]).toContain(
+        tile.style.animationDuration,
+      );
+      delays.add(tile.style.animationDelay);
+    }
+    // 不得整齐划一地同相位摆动
+    expect(delays.size).toBeGreaterThan(1);
+
+    await user.click(screen.getByRole("button", { name: "完成编辑" }));
+
+    // 普通模式（外跳链接）一个抖动类都不带
+    expect(container.querySelectorAll(".animate-nav-tile-jiggle")).toHaveLength(
+      0,
+    );
+  });
+
   it("Esc 退出编辑模式", async () => {
     const user = userEvent.setup();
     renderPage();

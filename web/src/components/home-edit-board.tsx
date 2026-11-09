@@ -66,6 +66,12 @@ import type { LinkStyle, SiteCategory, SiteLink, TileSize } from "@/lib/types";
  * `rectSortingStrategy` 只是按实测矩形做位移预览，砖全部等尺寸反而更准；
  * `closestCorners` 也不依赖网格。
  * 空分类的落点就是那块固定尺寸的「+」砖，命中面积随砖确定。
+ *
+ * 抖动（iOS 主屏式）分两层实现，互不打架：dnd-kit 的拖拽位移 `transform` 留在
+ * 外层 `<div>`（`setNodeRef` 那层），抖动的 `rotate` 挂在内层砖壳上（`TILE_JIGGLE_CLASS`
+ * + `tileJiggleStyle` 给的相位/周期）。正在拖的那块去掉动画类停抖，其余照抖；
+ * `DragOverlay` 的预览砖不抖。旋转不改布局盒，所以外层 div 的实测矩形不变，
+ * `rectSortingStrategy` / `closestCorners` 的输入稳定。
  */
 
 /** 分类标题行投放目标（落到该分类末尾）的 id 前缀 */
@@ -97,6 +103,41 @@ const collisionDetection: CollisionDetection = (args) => {
 const PLACEHOLDER_CLASS: Partial<Record<LinkStyle, string>> = {
   wide: "min-h-[82px]",
 };
+
+/**
+ * 砖块抖动的工具类（Tailwind 从 `index.css` 的 `--animate-nav-tile-jiggle` 生成）。
+ * 必须是完整字面量：Tailwind 只扫源码正文，拼出来的类名不会被生成。
+ */
+export const TILE_JIGGLE_CLASS = "animate-nav-tile-jiggle";
+
+/**
+ * 单程摆动的三档时长（ms）：配 `alternate` 就是完整往返 320 / 360 / 400ms
+ * （规格 0.3–0.4s）。逐砖取其中一档，避免同周期同相位的砖在视觉上锁成一条线。
+ */
+const JIGGLE_SWING_MS = [160, 180, 200] as const;
+
+/** 相位打散的窗口（ms）：负延迟取 0–399，足够覆盖任何一个抖动周期 */
+const JIGGLE_PHASE_MS = 400;
+
+/**
+ * 一块砖的抖动相位与周期（内联 CSS，不用 JS 逐帧驱动）。
+ *
+ * 用 key（链接 id / `add:<分类 id>`）的 FNV-1a 32 位散列取延迟与时长：同一块砖
+ * 每次渲染算出来都一样（重渲染不会把动画拽回起点，拖拽结束后也回到自己的相位），
+ * 相邻砖的延迟又天然错开。负延迟 = 动画一开始就已经跑在周期中途。
+ */
+export function tileJiggleStyle(key: string): React.CSSProperties {
+  let hash = 2166136261;
+  for (let i = 0; i < key.length; i += 1) {
+    hash ^= key.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  const h = hash >>> 0;
+  return {
+    animationDelay: `-${h % JIGGLE_PHASE_MS}ms`,
+    animationDuration: `${JIGGLE_SWING_MS[h % JIGGLE_SWING_MS.length]}ms`,
+  };
+}
 
 type Order = Record<string, string[]>;
 
@@ -224,6 +265,9 @@ function EditableTile({
         {...listeners}
         aria-label={link.title}
         title={link.title}
+        // 抖动挂在内层砖壳：拖拽位移的 transform 在外层 div（分层见文件头注释），
+        // 拖起中这块停抖，松手后按自己的相位继续
+        style={isDragging ? undefined : tileJiggleStyle(link.id)}
         className={cn(
           linkTileClassName(linkStyle, tileSize),
           // compact / wide 仍在网格里，砖壳要撑满格子（<button> 的 width:auto 会按
@@ -231,6 +275,7 @@ function EditableTile({
           // 不能补 w-full，否则宽度被容器抢走
           linkStyle !== "classic" && "w-full min-w-0",
           "cursor-grab select-none active:cursor-grabbing",
+          !isDragging && TILE_JIGGLE_CLASS,
         )}
         onClick={() => onEdit(link.id)}
       >
@@ -310,12 +355,15 @@ function AddLinkTile({
       aria-label={`向「${category.name}」新增链接`}
       title={`向「${category.name}」新增链接`}
       onClick={() => onAdd(category.id)}
+      // 这块就是「+」砖，空分类时兼任落点：它自己就是抖动的那个元素，不另包一层
+      style={tileJiggleStyle(`add:${category.id}`)}
       className={cn(
         linkTileClassName(linkStyle, tileSize),
         PLACEHOLDER_CLASS[linkStyle],
         // 同上一块砖：compact / wide 撑满格子，classic 保持砖宽固定
         linkStyle !== "classic" && "w-full min-w-0",
         "items-center justify-center border border-dashed border-white/40 bg-transparent text-white/80 hover:bg-white/5 hover:text-white",
+        TILE_JIGGLE_CLASS,
         isOver && "bg-white/10",
       )}
     >
@@ -517,6 +565,7 @@ export function HomeEditBoard({
         </div>
       </FadeIn>
       <DragOverlay>
+        {/* 拖拽预览：刻意不加抖动类（被拖起的那块整体停抖） */}
         {activeLink ? (
           <div
             className={cn(
