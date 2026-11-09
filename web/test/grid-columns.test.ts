@@ -3,7 +3,6 @@ import {
   CLASSIC_MAX_GAP,
   CLASSIC_MIN_GAP,
   CLASSIC_TILE_HEIGHT_CLASS,
-  CLASSIC_TILE_HEIGHTS,
   CLASSIC_TILE_SIZE,
   CLASSIC_TILE_SIZES,
   CLASSIC_TILE_WIDTH_CLASS,
@@ -87,25 +86,22 @@ describe("classicGridMetrics：定宽砖 + 间距调个数", () => {
  * 算法结构不变（见 lib/grid-columns.ts）。
  */
 describe("classicGridMetrics：tileSize 三档", () => {
-  it("三档砖宽 / 砖高与静态尺寸类一一对应（宽入排布、高随图标与文字行反推）", () => {
+  it("三档砖是正方形：宽类与高类同值，宽入排布、高只决定外形", () => {
     expect(CLASSIC_TILE_SIZES).toEqual({
       large: 141.5,
       medium: 113,
       small: 92,
     });
-    // 砖高 = 图标盒 + 2×gap + 两行名称 + 一行网址 + 上下内距 + 边框 + 余量，
-    // 三档同一套算法反推（见 lib/grid-columns.ts）
-    expect(CLASSIC_TILE_HEIGHTS).toEqual({
-      large: 185,
-      medium: 144,
-      small: 119,
-    });
     for (const size of TILE_SIZE_OPTIONS) {
       expect(CLASSIC_TILE_WIDTH_CLASS[size]).toBe(
         `w-[${CLASSIC_TILE_SIZES[size]}px]`,
       );
+      // 高 = 宽：两个字典的数值必须一模一样（同一个边长喂两个类）
       expect(CLASSIC_TILE_HEIGHT_CLASS[size]).toBe(
-        `h-[${CLASSIC_TILE_HEIGHTS[size]}px]`,
+        `h-[${CLASSIC_TILE_SIZES[size]}px]`,
+      );
+      expect(CLASSIC_TILE_HEIGHT_CLASS[size].slice(1)).toBe(
+        CLASSIC_TILE_WIDTH_CLASS[size].slice(1),
       );
     }
     expect(CLASSIC_TILE_SIZE).toBe(CLASSIC_TILE_SIZES.large);

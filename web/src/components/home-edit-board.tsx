@@ -54,10 +54,10 @@ import type { LinkStyle, SiteCategory, SiteLink, TileSize } from "@/lib/types";
  * 位移 6px 激活（单击不被吃掉）。拖拽覆盖层用 dnd-kit 原生 `DragOverlay`。
  *
  * 尺寸口径：砖的格子由 `linkGridLayout(linkStyle, columns, tileSize)` 给出（与普通模式
- * 同一个容器，classic 的成块列数与砖宽取站点设置 `columns` / `tileSize`）；classic
- * 的砖壳是定宽定高（`w-[…] h-[…]` 按三档静态类，高度随图标盒与两行文字反推），普通
- * 模式与编辑模式完全同尺寸，名称与网址在砖内单行截断（`LinkTileContent` 的
- * `singleLine`）、悬停 `title` 看全称。✕ 角标定位在外层包一层上，自然落在砖的右上角。
+ * 同一个容器，classic 的成块列数与砖边长取站点设置 `columns` / `tileSize`）；classic
+ * 的砖壳是正方形（`w-[…] h-[…]` 按三档静态类，高与宽相等），普通模式与编辑模式完全
+ * 同尺寸，名称与网址在砖内单行截断并补 `title`（悬停看全称）。✕ 角标定位在外层包一层上，
+ * 自然落在砖的右上角。
  * 拖拽预览用 dnd-kit 的 `DragOverlay`：包裹层尺寸由它按砖的实测矩形给定，砖规整后
  * 预览也就一致。
  *
